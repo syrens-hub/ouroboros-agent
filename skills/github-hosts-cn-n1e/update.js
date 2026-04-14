@@ -645,18 +645,14 @@ function copyToHosts(tempFile, hostsFile) {
   const safeHostsFile = validatePath(hostsFile, CONFIG.isWindows ? 'C:\\Windows\\System32\\drivers\\etc' : '/etc');
   const safeTempFile = validatePath(tempFile, CONFIG.tempDir);
   
-  try {
-    if (CONFIG.isWindows) {
-      // Windows: 使用预定义的copy命令
-      execSync(`${cmds.copy} "${safeTempFile}" "${safeHostsFile}"`, { stdio: 'inherit' });
-    } else {
-      // macOS/Linux: 使用预定义的cp命令，需要sudo权限
-      execSync(`sudo ${cmds.copy} "${safeTempFile}" "${safeHostsFile}"`, { stdio: 'inherit' });
-    }
-    return true;
-  } catch (error) {
-    throw error;
+  if (CONFIG.isWindows) {
+    // Windows: 使用预定义的copy命令
+    execSync(`${cmds.copy} "${safeTempFile}" "${safeHostsFile}"`, { stdio: 'inherit' });
+  } else {
+    // macOS/Linux: 使用预定义的cp命令，需要sudo权限
+    execSync(`sudo ${cmds.copy} "${safeTempFile}" "${safeHostsFile}"`, { stdio: 'inherit' });
   }
+  return true;
 }
 
 // ============ 恢复备份文件 ============
@@ -668,16 +664,12 @@ function copyFromBackup(backupPath, hostsFile) {
   const safeHostsFile = validatePath(hostsFile, CONFIG.isWindows ? 'C:\\Windows\\System32\\drivers\\etc' : '/etc');
   const safeBackupPath = validatePath(backupPath, CONFIG.backupDir);
   
-  try {
-    if (CONFIG.isWindows) {
-      execSync(`${cmds.copy} "${safeBackupPath}" "${safeHostsFile}"`, { stdio: 'inherit' });
-    } else {
-      execSync(`sudo ${cmds.copy} "${safeBackupPath}" "${safeHostsFile}"`, { stdio: 'inherit' });
-    }
-    return true;
-  } catch (error) {
-    throw error;
+  if (CONFIG.isWindows) {
+    execSync(`${cmds.copy} "${safeBackupPath}" "${safeHostsFile}"`, { stdio: 'inherit' });
+  } else {
+    execSync(`sudo ${cmds.copy} "${safeBackupPath}" "${safeHostsFile}"`, { stdio: 'inherit' });
   }
+  return true;
 }
 
 // ============ 显示状态 ============

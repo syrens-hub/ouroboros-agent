@@ -72,4 +72,29 @@ describe('SkillManager', () => {
     const button = screen.getByRole('button', { name: /安装/i })
     expect(button).toBeDisabled()
   })
+
+  it('shows auto-generated badge for generated skills', () => {
+    const skills = [
+      { name: 'auto-skill', version: '1.0.0', description: 'Auto skill', tags: ['generated', 'utils'] },
+    ]
+    render(<SkillManager skills={skills} />, { wrapper: Wrapper })
+    expect(screen.getByText('自动生成')).toBeInTheDocument()
+    expect(screen.getByText('generated')).toBeInTheDocument()
+    expect(screen.getByText('utils')).toBeInTheDocument()
+  })
+
+  it('triggers skill code generation', async () => {
+    mockFetch.mockResolvedValueOnce({
+      json: async () => ({ success: true, data: { toolsLoaded: ['toolA'] } }),
+    })
+    const skills = [
+      { name: 'empty-skill', version: '1.0.0', description: 'No code yet', tags: [], hasCode: false },
+    ]
+    render(<SkillManager skills={skills} />, { wrapper: Wrapper })
+    const btn = screen.getByRole('button', { name: /生成代码/i })
+    await userEvent.click(btn)
+    await waitFor(() => {
+      expect(screen.getByText(/代码生成成功: toolA/)).toBeInTheDocument()
+    })
+  })
 })

@@ -20,5 +20,5 @@
     }
   },
   "include": ["**/*.ts"],
-  "exclude": ["node_modules", "dist", "web/node_modules", "web/dist", "skills/web-mcp/templates"]
+  "exclude": ["node_modules", "dist", "web/node_modules", "web/dist", "skills/web-mcp/templates", "skills/archive"]
 }

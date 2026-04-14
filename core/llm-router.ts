@@ -11,7 +11,6 @@ import type {
   ToolUseBlock,
   TextBlock,
   Result,
-  ImageBlock,
 } from "../types/index.ts";
 import { ok, err } from "../types/index.ts";
 import { sanitizeMessageForLLM } from "./prompt-defense.ts";

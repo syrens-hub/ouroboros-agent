@@ -21,7 +21,7 @@ class MCPManager {
         u.password = '';
         u.username = '';
         safeUrl = u.toString();
-      } catch (e) {
+      } catch {
         // invalid url, just keep it as is or mask it
       }
       this.logger.info(`[MCP] Connecting to ${name} at ${safeUrl}`);

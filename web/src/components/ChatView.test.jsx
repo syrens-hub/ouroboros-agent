@@ -157,7 +157,7 @@ describe('ChatView', () => {
     const inputContainer = screen.getByPlaceholderText('输入消息...').parentElement.parentElement
 
     await act(async () => {
-      // eslint-disable-next-line no-undef
+       
       const dropEvent = new Event('drop', { bubbles: true })
       Object.defineProperty(dropEvent, 'dataTransfer', {
         value: { files: [file] },
@@ -402,5 +402,28 @@ describe('ChatView', () => {
         expect(screen.getByText('report.pdf')).toBeInTheDocument()
       })
     })
+
+    it('renders computer use card and step count', async () => {
+      mockFetch.mockResolvedValueOnce({
+        json: async () => ({
+          success: true,
+          data: [
+            { role: 'computer_use', content: JSON.stringify({ success: true, goal: 'Search', stepsTaken: 3, history: ['step1'] }), timestamp: Date.now() },
+          ],
+        }),
+      })
+
+      render(<ChatView sessions={sessions} systemStatus={{}} />, { wrapper: Wrapper })
+      await userEvent.click(screen.getByText('Session One'))
+
+      await waitFor(() => {
+        expect(screen.getByText('Computer Use')).toBeInTheDocument()
+        expect(screen.getByText('3 步')).toBeInTheDocument()
+        expect(screen.getByText(/目标：/)).toBeInTheDocument()
+        expect(screen.getByText('Search')).toBeInTheDocument()
+      })
+    })
+
+
   })
 })

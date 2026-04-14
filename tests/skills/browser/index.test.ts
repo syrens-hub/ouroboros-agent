@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { readdirSync, writeFileSync, mkdirSync, statSync } from "fs";
+import { readdirSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
@@ -124,8 +124,6 @@ describe("BrowserController", () => {
       const p = join(dir, `old_${Date.now()}_${i}.png`);
       writeFileSync(p, Buffer.from("png"));
       // Touch mtime to be strictly increasing
-      const now = Date.now();
-      const stat = statSync(p);
       // We can't easily set mtime in a cross-platform way without extra dep,
       // but since files are written sequentially, their natural mtimes are increasing.
       // To ensure ordering, wait a tiny bit between writes.

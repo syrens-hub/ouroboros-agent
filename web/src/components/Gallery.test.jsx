@@ -1,71 +1,79 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { Gallery } from './Gallery.jsx'
 
-const mockFetch = vi.fn()
+const mockUseQuery = vi.fn()
+const mockUseMutation = vi.fn()
 
-vi.mock('../api.js', () => ({
-  apiFetch: (...args) => mockFetch(...args),
+vi.mock('@tanstack/react-query', () => ({
+  useQuery: (...args) => mockUseQuery(...args),
+  useMutation: (...args) => mockUseMutation(...args),
 }))
 
-function Wrapper({ children }) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-}
-
 describe('Gallery', () => {
+  let mutateFn
+
   beforeEach(() => {
-    mockFetch.mockReset()
+    mutateFn = vi.fn()
+    mockUseQuery.mockReturnValue({ data: null, isLoading: false })
+    mockUseMutation.mockReturnValue({
+      mutate: mutateFn,
+      isPending: false,
+      isSuccess: false,
+      data: null,
+    })
   })
 
-  it('shows empty screenshots message by default', () => {
-    mockFetch.mockResolvedValueOnce({ json: async () => ({ success: true, data: [] }) })
-    render(<Gallery />, { wrapper: Wrapper })
+  it('renders screenshots tab by default', () => {
+    render(<Gallery />)
+    expect(screen.getByText('截图')).toBeInTheDocument()
+    expect(screen.getByText('画布')).toBeInTheDocument()
     expect(screen.getByText('暂无截图')).toBeInTheDocument()
   })
 
-  it('switches to canvas tab', async () => {
-    mockFetch.mockResolvedValueOnce({ json: async () => ({ success: true, data: [] }) })
-    render(<Gallery />, { wrapper: Wrapper })
-    await userEvent.click(screen.getByRole('button', { name: '画布' }))
-    expect(screen.getByText('JSON Preview')).toBeInTheDocument()
-  })
-
-  it('renders screenshot thumbnails', async () => {
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({
-        success: true,
+  it('renders screenshot list when data is present', () => {
+    mockUseQuery.mockReturnValue({
+      data: {
         data: [
-          { filename: 'sc1.png', url: '/sc1.png' },
-          { filename: 'sc2.png', url: '/sc2.png' },
+          { url: '/api/gallery/screenshots/1.png', filename: 'test.png' },
         ],
-      }),
+      },
+      isLoading: false,
     })
-    render(<Gallery />, { wrapper: Wrapper })
-    await waitFor(() => {
-      expect(screen.getByText('sc1.png')).toBeInTheDocument()
-      expect(screen.getByText('sc2.png')).toBeInTheDocument()
-    })
+    render(<Gallery />)
+    expect(screen.getByText('test.png')).toBeInTheDocument()
+    expect(screen.getByRole('img')).toHaveAttribute('src', '/api/gallery/screenshots/1.png')
   })
 
-  it('draws canvas and renders image on shape click', async () => {
-    mockFetch.mockResolvedValueOnce({ json: async () => ({ success: true, data: [] }) })
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({
-        success: true,
-        data: { dataUrl: 'data:image/png;base64,abc123' },
-      }),
-    })
-    render(<Gallery />, { wrapper: Wrapper })
-    await userEvent.click(screen.getByRole('button', { name: '画布' }))
-    await userEvent.click(screen.getByRole('button', { name: '矩形' }))
+  it('switches to canvas tab', () => {
+    render(<Gallery />)
+    fireEvent.click(screen.getByText('画布'))
+    expect(screen.getByText('矩形')).toBeInTheDocument()
+    expect(screen.getByText('圆形')).toBeInTheDocument()
+    expect(screen.getByText('文字')).toBeInTheDocument()
+  })
 
-    await waitFor(() => {
-      expect(screen.getByAltText('canvas')).toHaveAttribute('src', 'data:image/png;base64,abc123')
+  it('adds rect command and calls mutate', () => {
+    render(<Gallery />)
+    fireEvent.click(screen.getByText('画布'))
+    fireEvent.click(screen.getByText('矩形'))
+    expect(mutateFn).toHaveBeenCalledTimes(1)
+    const payload = mutateFn.mock.calls[0][0]
+    expect(payload.width).toBe(400)
+    expect(payload.height).toBe(300)
+    expect(payload.commands).toHaveLength(1)
+    expect(payload.commands[0].type).toBe('rect')
+  })
+
+  it('shows canvas result on mutation success', () => {
+    mockUseMutation.mockReturnValue({
+      mutate: mutateFn,
+      isPending: false,
+      isSuccess: true,
+      data: { success: true, data: { dataUrl: 'data:image/png;base64,abc' } },
     })
+    render(<Gallery />)
+    fireEvent.click(screen.getByText('画布'))
+    expect(screen.getByRole('img', { name: 'canvas' })).toHaveAttribute('src', 'data:image/png;base64,abc')
   })
 })

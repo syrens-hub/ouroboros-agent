@@ -610,6 +610,37 @@ export function ChatView({ sessions, systemStatus }) {
     e.preventDefault()
   }, [])
 
+  const handleAttachImage = useCallback(
+    async (file) => {
+      if (!activeSessionId) return
+      const id = URL.createObjectURL(file)
+      setAttachedFiles((prev) => [...prev, { id, previewUrl: id, name: file.name, type: 'image', uploading: true }])
+      try {
+        const compressed = await compressImage(file, 1920, 0.85)
+        const { url } = await uploadFile(compressed, activeSessionId, 'image')
+        setAttachedFiles((prev) => prev.map((f) => (f.id === id ? { ...f, serverUrl: url, uploading: false } : f)))
+      } catch {
+        setAttachedFiles((prev) => prev.filter((f) => f.id !== id))
+      }
+    },
+    [activeSessionId]
+  )
+
+  const handleAttachFile = useCallback(
+    async (file) => {
+      if (!activeSessionId) return
+      const id = `${Date.now()}-${Math.random()}`
+      setAttachedFiles((prev) => [...prev, { id, name: file.name, type: 'file', size: file.size, uploading: true }])
+      try {
+        const { url } = await uploadFile(file, activeSessionId, 'file')
+        setAttachedFiles((prev) => prev.map((f) => (f.id === id ? { ...f, serverUrl: url, uploading: false } : f)))
+      } catch {
+        setAttachedFiles((prev) => prev.filter((f) => f.id !== id))
+      }
+    },
+    [activeSessionId]
+  )
+
   const handleDrop = useCallback(
     (e) => {
       e.preventDefault()
@@ -631,7 +662,7 @@ export function ChatView({ sessions, systemStatus }) {
       imageFiles.forEach((file) => handleAttachImage(file))
       otherFiles.forEach((file) => handleAttachFile(file))
     },
-    [activeSessionId]
+    [handleAttachImage, handleAttachFile]
   )
 
   const handlePaste = useCallback(
@@ -650,33 +681,8 @@ export function ChatView({ sessions, systemStatus }) {
         imageFiles.forEach((file) => handleAttachImage(file))
       }
     },
-    [activeSessionId]
+    [activeSessionId, handleAttachImage]
   )
-
-  async function handleAttachImage(file) {
-    if (!activeSessionId) return
-    const id = URL.createObjectURL(file)
-    setAttachedFiles((prev) => [...prev, { id, previewUrl: id, name: file.name, type: 'image', uploading: true }])
-    try {
-      const compressed = await compressImage(file, 1920, 0.85)
-      const { url } = await uploadFile(compressed, activeSessionId, 'image')
-      setAttachedFiles((prev) => prev.map((f) => (f.id === id ? { ...f, serverUrl: url, uploading: false } : f)))
-    } catch {
-      setAttachedFiles((prev) => prev.filter((f) => f.id !== id))
-    }
-  }
-
-  async function handleAttachFile(file) {
-    if (!activeSessionId) return
-    const id = `${Date.now()}-${Math.random()}`
-    setAttachedFiles((prev) => [...prev, { id, name: file.name, type: 'file', size: file.size, uploading: true }])
-    try {
-      const { url } = await uploadFile(file, activeSessionId, 'file')
-      setAttachedFiles((prev) => prev.map((f) => (f.id === id ? { ...f, serverUrl: url, uploading: false } : f)))
-    } catch {
-      setAttachedFiles((prev) => prev.filter((f) => f.id !== id))
-    }
-  }
 
   const handleFileSelect = useCallback(
     async (e) => {
@@ -697,7 +703,7 @@ export function ChatView({ sessions, systemStatus }) {
       }
       e.target.value = ''
     },
-    [activeSessionId]
+    [handleAttachImage, handleAttachFile]
   )
 
   const handleCameraSelect = useCallback(
@@ -706,7 +712,7 @@ export function ChatView({ sessions, systemStatus }) {
       if (file) await handleAttachImage(file)
       e.target.value = ''
     },
-    [activeSessionId]
+    [handleAttachImage]
   )
 
   const activeSession = sessions.find((s) => s.sessionId === activeSessionId)

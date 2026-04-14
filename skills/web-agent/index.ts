@@ -4,12 +4,12 @@
  * 网页浏览与内容获取工具
  */
 
-const https = require('https');
-const http = require('http');
-const { URL } = require('url');
+import https from 'https';
+import http from 'http';
+import { URL } from 'url';
 
 // 简单的 HTTP 请求函数
-function fetchUrl(url: string, options: { headers?: Record<string, string> } = {}): Promise<{ status: number; headers: Record<string, string | string[]>; content: string; url: string }> {
+function fetchUrl(url: string, options: { headers?: Record<string, string> } = {}): Promise<{ status: number | undefined; headers: http.IncomingHttpHeaders; content: string; url: string }> {
     return new Promise((resolve, reject) => {
         const parsedUrl = new URL(url);
         const isHttps = parsedUrl.protocol === 'https:';
@@ -31,10 +31,10 @@ function fetchUrl(url: string, options: { headers?: Record<string, string> } = {
             timeout: 15000,
         };
         
-        const req = lib.request(reqOptions, (res: any) => {
+        const req = lib.request(reqOptions, (res: http.IncomingMessage) => {
             let data = '';
-            
-            res.on('data', (chunk: any) => {
+
+            res.on('data', (chunk: string | Buffer) => {
                 data += chunk;
             });
             
@@ -135,8 +135,8 @@ async function main() {
             console.log('\n⚠️ 未提取到有效中文内容（可能是反爬虫保护或非中文页面）');
         }
         
-    } catch (error: any) {
-        console.error(`错误: ${error.message}`);
+    } catch (error: unknown) {
+        console.error(`错误: ${error instanceof Error ? error.message : String(error)}`);
         process.exit(1);
     }
 }

@@ -19,6 +19,8 @@ describe("AdaptiveOptimizer", () => {
   });
 
   it("records results and suggests best config", () => {
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.5);
+
     optimizer.recordResult(
       "sess-1",
       { temperature: 0.2, maxTokens: 1024, pruningStrategy: "aggressive", contextBudget: 4000 },
@@ -52,12 +54,14 @@ describe("AdaptiveOptimizer", () => {
     );
 
     const best = optimizer.suggestConfig("sess-1");
+    randomSpy.mockRestore();
     expect(best).not.toBeNull();
     expect(best?.temperature).toBe(0.2);
     expect(best?.pruningStrategy).toBe("aggressive");
   });
 
   it("returns null when no config has enough samples", () => {
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.5);
     optimizer.recordResult(
       "sess-1",
       { temperature: 0.2, maxTokens: 1024, pruningStrategy: "aggressive", contextBudget: 4000 },
@@ -70,6 +74,7 @@ describe("AdaptiveOptimizer", () => {
     );
 
     const best = optimizer.suggestConfig("sess-1");
+    randomSpy.mockRestore();
     expect(best).toBeNull();
   });
 

@@ -30,7 +30,7 @@ export function LearningInsights({ sessionId = 'demo-session' }) {
   })
 
   const rawPatterns = patternsData?.data?.patterns ?? patternsData?.data ?? []
-  const patterns = rawPatterns.slice(0, 3)
+  const patterns = Array.isArray(rawPatterns) ? rawPatterns.slice(0, 3) : []
   const config = configData?.data || {}
 
   return (

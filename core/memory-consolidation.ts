@@ -6,7 +6,7 @@
 
 import { getDb } from "./db-manager.ts";
 import { logger } from "./logger.ts";
-import { queryMemoryLayers, insertMemoryLayer, deleteMemoryLayersByIds } from "./repositories/memory-layers.ts";
+import { insertMemoryLayer, deleteMemoryLayersByIds } from "./repositories/memory-layers.ts";
 
 export interface ConsolidationResult {
   prunedLowValue: number;

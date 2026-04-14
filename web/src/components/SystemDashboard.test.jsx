@@ -50,6 +50,12 @@ describe('SystemDashboard', () => {
       if (path === '/api/kb/stats') {
         return { json: async () => ({ data: { totalDocuments: 3, totalChunks: 12, avgPromotionScore: 0.45 } }) }
       }
+      if (path === '/api/app-metrics') {
+        return { json: async () => ({ data: {} }) }
+      }
+      if (path === '/api/tasks') {
+        return { json: async () => ({ data: [] }) }
+      }
       return { json: async () => ({}) }
     })
   })
@@ -121,5 +127,35 @@ describe('SystemDashboard', () => {
   it('renders deep dreaming status', () => {
     render(<SystemDashboard status={{ deepDreamingLastRun: Date.now() }} />, { wrapper: Wrapper })
     expect(screen.getByText('Deep Dreaming')).toBeInTheDocument()
+  })
+
+  it('tests LLM connection', async () => {
+    mockFetch.mockResolvedValueOnce({ json: async () => ({ success: true, data: { ok: true } }) })
+    render(<SystemDashboard status={{ llmProvider: 'openai' }} />, { wrapper: Wrapper })
+    const btn = screen.getByRole('button', { name: /测试 LLM/i })
+    await userEvent.click(btn)
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith('/api/llm/test', { method: 'POST' })
+    })
+  })
+
+  it('exports trajectory backup', async () => {
+    mockFetch.mockResolvedValueOnce({ json: async () => ({ success: true, data: { count: 5, path: '/tmp/out.jsonl' } }) })
+    render(<SystemDashboard status={{}} />, { wrapper: Wrapper })
+    const btn = screen.getByRole('button', { name: /备份轨迹/i })
+    await userEvent.click(btn)
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith('/api/backup/export', { method: 'POST' })
+    })
+  })
+
+  it('creates database backup', async () => {
+    mockFetch.mockResolvedValueOnce({ json: async () => ({ success: true, data: { filename: 'new.db' } }) })
+    render(<SystemDashboard status={{}} />, { wrapper: Wrapper })
+    const btn = screen.getByRole('button', { name: /立即备份/i })
+    await userEvent.click(btn)
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith('/api/backup/db/create', { method: 'POST' })
+    })
   })
 })

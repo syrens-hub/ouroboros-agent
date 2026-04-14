@@ -74,7 +74,7 @@ export class StreamableHTTPClientTransport {
                 if (this.onmessage) {
                   this.onmessage(message);
                 }
-              } catch (e) {
+              } catch {
                 // Not valid JSON
               }
             }

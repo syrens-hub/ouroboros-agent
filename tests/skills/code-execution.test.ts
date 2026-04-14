@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { existsSync } from "fs";
+import { describe, it, expect } from "vitest";
+import { existsSync, readdirSync } from "fs";
 import { join } from "path";
 import { SandboxRunner } from "../../skills/code-execution/index.ts";
 
@@ -75,13 +75,13 @@ process.stdin.on("end", () => {
   it("cleans up sandbox directory after run", async () => {
     const before = new Set(
       existsSync(join(process.cwd(), ".ouroboros", "sandbox"))
-        ? require("fs").readdirSync(join(process.cwd(), ".ouroboros", "sandbox"))
+        ? readdirSync(join(process.cwd(), ".ouroboros", "sandbox"))
         : []
     );
     await runner.run("javascript", `console.log("cleanup test");`);
     const after = new Set(
       existsSync(join(process.cwd(), ".ouroboros", "sandbox"))
-        ? require("fs").readdirSync(join(process.cwd(), ".ouroboros", "sandbox"))
+        ? readdirSync(join(process.cwd(), ".ouroboros", "sandbox"))
         : []
     );
     // If new dirs appeared, they should have been cleaned up

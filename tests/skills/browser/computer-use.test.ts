@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+type ToolLike = { call: (...args: unknown[]) => Promise<Record<string, unknown>> };
+
 const mockPage = {
   goto: vi.fn(),
   title: vi.fn(),
@@ -150,7 +152,7 @@ describe("computer_use tool", () => {
     const tools = createBrowserTools(controller, undefined);
     const computerUse = tools.find((t) => t.name === "computer_use")!;
     await expect(
-      (computerUse as any).call({ goal: "test", startUrl: "https://example.com" }, ctx)
+      (computerUse as unknown as ToolLike).call({ goal: "test", startUrl: "https://example.com" }, ctx)
     ).rejects.toThrow("LLM not configured");
   });
 
@@ -158,7 +160,7 @@ describe("computer_use tool", () => {
     const tools = createBrowserTools(controller, llmCfg);
     const computerUse = tools.find((t) => t.name === "computer_use")!;
     await expect(
-      (computerUse as any).call({ goal: "test", startUrl: "file:///secret" }, ctx)
+      (computerUse as unknown as ToolLike).call({ goal: "test", startUrl: "file:///secret" }, ctx)
     ).rejects.toThrow("Start URL not allowed");
   });
 
@@ -167,7 +169,7 @@ describe("computer_use tool", () => {
     const computerUse = tools.find((t) => t.name === "computer_use")!;
     mockLLMResponse("ACTION: done | summary: Completed");
 
-    const result = (await (computerUse as any).call(
+    const result = (await (computerUse as unknown as ToolLike).call(
       { goal: "test", startUrl: "https://example.com", maxSteps: 5 },
       ctx
     )) as Record<string, unknown>;
@@ -187,7 +189,7 @@ describe("computer_use tool", () => {
     const computerUse = tools.find((t) => t.name === "computer_use")!;
     mockLLMResponse("ACTION: click | selector: #submit");
 
-    const result = (await (computerUse as any).call(
+    const result = (await (computerUse as unknown as ToolLike).call(
       { goal: "click submit", startUrl: "https://example.com", maxSteps: 5 },
       ctx
     )) as Record<string, unknown>;
@@ -203,7 +205,7 @@ describe("computer_use tool", () => {
     const computerUse = tools.find((t) => t.name === "computer_use")!;
     mockLLMResponse("ACTION: type | selector: #search | value: Ouroboros");
 
-    const result = (await (computerUse as any).call(
+    const result = (await (computerUse as unknown as ToolLike).call(
       { goal: "search", startUrl: "https://example.com", maxSteps: 3 },
       ctx
     )) as Record<string, unknown>;
@@ -217,7 +219,7 @@ describe("computer_use tool", () => {
     const computerUse = tools.find((t) => t.name === "computer_use")!;
     mockLLMResponse("ACTION: scroll | direction: down | amount: 200");
 
-    const result = (await (computerUse as any).call(
+    const result = (await (computerUse as unknown as ToolLike).call(
       { goal: "scroll page", startUrl: "https://example.com", maxSteps: 2 },
       ctx
     )) as Record<string, unknown>;
@@ -235,7 +237,7 @@ describe("computer_use tool", () => {
 
     mockLLMResponse("ACTION: navigate | url: https://example.com/next");
 
-    const result = (await (computerUse as any).call(
+    const result = (await (computerUse as unknown as ToolLike).call(
       { goal: "go next", startUrl: "https://example.com", maxSteps: 2 },
       ctx
     )) as Record<string, unknown>;
@@ -251,7 +253,7 @@ describe("computer_use tool", () => {
     mockLLMResponse("ACTION: navigate | url: file:///etc/passwd");
 
     await expect(
-      (computerUse as any).call(
+      (computerUse as unknown as ToolLike).call(
         { goal: "hack", startUrl: "https://example.com", maxSteps: 2 },
         ctx
       )

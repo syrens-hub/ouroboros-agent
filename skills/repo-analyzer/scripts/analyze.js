@@ -1814,6 +1814,7 @@ async function analyzeRepo(owner, repo) {
       }
 
       // Check for hidden unicode / zero-width characters (steganographic injection)
+      // eslint-disable-next-line no-misleading-character-class
       const zwChars = mdContent.match(/[\u200B\u200C\u200D\u2060\uFEFF]/g);
       if (zwChars && zwChars.length > 5) {
         agentSafety.warning.push(`${mdFile}: ${zwChars.length} zero-width characters — possible steganographic injection`);

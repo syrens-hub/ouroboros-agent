@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { rmSync, existsSync, readFileSync, mkdirSync } from "fs";
+import { rmSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import {
   generateSkillPackage,

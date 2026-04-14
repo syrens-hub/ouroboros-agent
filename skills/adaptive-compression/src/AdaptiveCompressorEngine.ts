@@ -109,7 +109,7 @@ export class AdaptiveCompressorEngine {
     model?: string;
     prompt?: string;
   }): Promise<AssembleResult> {
-    const { messages, tokenBudget, model } = params;
+    const { messages, tokenBudget, model: _model } = params;
 
     if (messages.length === 0) {
       return { messages: [], estimatedTokens: 0 };

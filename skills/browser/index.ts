@@ -300,7 +300,7 @@ export function isAllowedUrl(url: string): boolean {
 export function createBrowserTools(
   controller: BrowserController,
   llmCfg?: LLMConfig,
-  deps?: { knowledgeBase?: KnowledgeBase }
+  _deps?: { knowledgeBase?: KnowledgeBase }
 ) {
   return [
     buildTool({

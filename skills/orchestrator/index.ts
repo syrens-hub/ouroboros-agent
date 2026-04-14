@@ -325,7 +325,7 @@ export function createDelegateTaskTool(deps: {
     isConcurrencySafe: false,
     async call(input, ctx) {
       const parentSessionId = String(ctx.taskId || "unknown");
-      let taskName = input.task_name || "worker";
+      const taskName = input.task_name || "worker";
       let taskDesc = input.task_description || "";
 
       // Fallback: if LLM sends empty params (common with MiniMax), infer from parent session history
@@ -333,7 +333,7 @@ export function createDelegateTaskTool(deps: {
         try {
           const history = await getMessages(parentSessionId, { limit: 5 });
           if (history.success && history.data && history.data.length > 0) {
-            const lastUser = history.data.slice().reverse().find((m: any) => m.role === "user");
+            const lastUser = history.data.slice().reverse().find((m: { role: string; content?: unknown }) => m.role === "user");
             if (lastUser && typeof lastUser.content === "string") {
               taskDesc = lastUser.content;
             }

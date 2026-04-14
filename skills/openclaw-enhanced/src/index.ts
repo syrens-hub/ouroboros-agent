@@ -8,7 +8,7 @@
  */
 
 import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join, dirname } from 'path';
+import { join } from 'path';
 import { homedir } from 'os';
 
 // ============================================================
@@ -189,7 +189,7 @@ class OpenClawEnhanced {
   /**
    * 处理错误并尝试修复
    */
-  async handleError(error: Error, context?: Record<string, unknown>): Promise<RepairResult> {
+  async handleError(error: Error, _context?: Record<string, unknown>): Promise<RepairResult> {
     this.failureCount++;
     
     // 如果连续失败次数达到阈值，尝试回滚

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, Clock, Calendar } from 'lucide-react'
+import { TrendingUp, Calendar } from 'lucide-react'
 import { apiFetch } from '../api.js'
 
 async function fetchTokenUsage(sessionId, granularity, days) {

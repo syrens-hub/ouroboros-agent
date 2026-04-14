@@ -66,7 +66,7 @@ export class IncrementalSummaryTree {
    */
   async addMessages(
     messages: AgentMessage[],
-    summarizeFn: (messages: AgentMessage[]) => Promise<string>
+    _summarizeFn: (messages: AgentMessage[]) => Promise<string>
   ): Promise<void> {
     // Implementation: split messages into shards, create summaries
     const shards = this.splitIntoShards(messages);

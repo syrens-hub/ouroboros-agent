@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Brain, Search, Layers, Clock, Star, FileText, X, ChevronDown, ChevronUp } from 'lucide-react'
+import { Brain, Search, Clock, Star, FileText, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { apiFetch } from '../api.js'
 
 const ALL_LAYERS = ['all', 'general', 'learning', 'reflection', 'archive', 'agency', 'competence', 'hil', 'important', 'project', 'pattern']

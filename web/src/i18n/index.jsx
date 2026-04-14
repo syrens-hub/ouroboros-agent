@@ -125,6 +125,7 @@ export function I18nProvider({ children }) {
       globalLocale = initial
       setLocaleState(initial)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const setLocale = useCallback((next) => {
