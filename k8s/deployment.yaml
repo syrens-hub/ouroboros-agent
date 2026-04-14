@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ouroboros-agent
+  namespace: ouroboros
+  labels:
+    app: ouroboros-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ouroboros-agent
+  template:
+    metadata:
+      labels:
+        app: ouroboros-agent
+    spec:
+      containers:
+        - name: ouroboros
+          image: ouroboros-agent:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: ouroboros-config
+            - secretRef:
+                name: ouroboros-secrets
+          env:
+            - name: NODE_ENV
+              value: "production"
+          volumeMounts:
+            - name: data
+              mountPath: /app/.ouroboros
+            - name: skills
+              mountPath: /app/skills
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 12
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ouroboros-data
+        - name: skills
+          persistentVolumeClaim:
+            claimName: ouroboros-skills

@@ -1,0 +1,9 @@
+{
+  "name": "adaptive-compression",
+  "version": "1.0.0",
+  "description": "Adaptive compression engine with Claude Code's complexity-driven algorithm",
+  "main": "src/index.ts",
+  "openclaw": {
+    "skills": true
+  }
+}

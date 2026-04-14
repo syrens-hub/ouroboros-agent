@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ouroboros-config
+  namespace: ouroboros
+data:
+  OUROBOROS_WEB_PORT: "8080"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  OUROBOROS_DB_DIR: ".ouroboros"
+  OUROBOROS_SKILL_DIR: "skills"
+  LLM_PROVIDER: "openai"
+  LLM_MODEL: "gpt-4o-mini"
+  # Optional: custom base URL for local models or proxies
+  # LLM_BASE_URL: "http://localhost:11434/v1/chat/completions"
+  FALLBACK_LLM_PROVIDER: "openai"
+  FALLBACK_LLM_MODEL: "gpt-4o-mini"
+  FEISHU_WEBHOOK_PORT: "3000"
+  FEISHU_WEBHOOK_PATH: "/feishu/webhook"

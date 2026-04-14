@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ouroboros-agent.fullname" . }}-config
+  labels:
+    {{- include "ouroboros-agent.labels" . | nindent 4 }}
+data:
+  {{- toYaml .Values.config | nindent 2 }}

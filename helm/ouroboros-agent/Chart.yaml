@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ouroboros-agent
+description: A Helm chart for Ouroboros Agent - a self-modifying agent system
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

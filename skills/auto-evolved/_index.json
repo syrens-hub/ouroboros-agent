@@ -1,0 +1,59 @@
+{
+  "skills": [
+    {
+      "file": "/Users/chimu/.openclaw/skills/auto-evolved/testing-20260408-224845.md",
+      "domain": "testing",
+      "task": "\u6d4b\u8bd5\u4efb\u52a1",
+      "created": "2026-04-08T14:48:45Z"
+    },
+    {
+      "file": "/Users/chimu/.openclaw/skills/auto-evolved/testing-20260408-224849.md",
+      "domain": "testing",
+      "task": "\u6d4b\u8bd5\u4efb\u52a1",
+      "created": "2026-04-08T14:48:49Z"
+    },
+    {
+      "file": "/Users/chimu/.openclaw/skills/auto-evolved/testing-20260408-224854.md",
+      "domain": "testing",
+      "task": "\u6d4b\u8bd5\u4efb\u52a12",
+      "created": "2026-04-08T14:48:54Z"
+    },
+    {
+      "file": "/Users/chimu/.openclaw/skills/auto-evolved/testing-20260408-224913.md",
+      "domain": "testing",
+      "task": "\u6d4b\u8bd5\u4efb\u52a13",
+      "created": "2026-04-08T14:49:13Z"
+    },
+    {
+      "file": "/Users/chimu/.openclaw/skills/auto-evolved/git-operations-20260408-225010.md",
+      "domain": "git-operations",
+      "task": "Git\u51b2\u7a81\u4fee\u590d",
+      "created": "2026-04-08T14:50:10Z"
+    },
+    {
+      "file": "/Users/chimu/.openclaw/skills/auto-evolved/testing-20260408-225016.md",
+      "domain": "testing",
+      "task": "\u6d4b\u8bd5\u4efb\u52a1",
+      "created": "2026-04-08T14:50:16Z"
+    },
+    {
+      "file": "/Users/chimu/.openclaw/skills/auto-evolved/testing-20260408-225032.md",
+      "domain": "testing",
+      "task": "\u6d4b\u8bd5\u4efb\u52a1",
+      "created": "2026-04-08T14:50:32Z"
+    }
+  ],
+  "domains": {
+    "testing": [
+      "/Users/chimu/.openclaw/skills/auto-evolved/testing-20260408-224845.md",
+      "/Users/chimu/.openclaw/skills/auto-evolved/testing-20260408-224849.md",
+      "/Users/chimu/.openclaw/skills/auto-evolved/testing-20260408-224854.md",
+      "/Users/chimu/.openclaw/skills/auto-evolved/testing-20260408-224913.md",
+      "/Users/chimu/.openclaw/skills/auto-evolved/testing-20260408-225016.md",
+      "/Users/chimu/.openclaw/skills/auto-evolved/testing-20260408-225032.md"
+    ],
+    "git-operations": [
+      "/Users/chimu/.openclaw/skills/auto-evolved/git-operations-20260408-225010.md"
+    ]
+  }
+}

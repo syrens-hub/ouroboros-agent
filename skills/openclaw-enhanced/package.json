@@ -1,0 +1,12 @@
+{
+  "name": "openclaw-enhanced",
+  "version": "1.0.0",
+  "description": "OpenClaw 增强插件 - 融合 Claude Code 架构的自我修复与人格发展能力",
+  "main": "src/index.ts",
+  "keywords": ["openclaw", "plugin", "self-healing", "personality", "enhanced"],
+  "author": "Matrix Agent",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,16 @@
+.git
+.github
+node_modules
+web/node_modules
+tests
+e2e
+playwright-report
+test-results
+scripts
+*.md
+!k8s/README.md
+.env
+.env.example
+.ouroboros
+.vscode
+.DS_Store

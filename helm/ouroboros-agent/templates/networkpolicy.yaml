@@ -1,0 +1,24 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ouroboros-agent.fullname" . }}
+  labels:
+    {{- include "ouroboros-agent.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ouroboros-agent.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+      {{- with .Values.networkPolicy.ingress }}
+      {{- toYaml . | nindent 8 }}
+      {{- end }}
+  egress:
+    - {}
+{{- end }}

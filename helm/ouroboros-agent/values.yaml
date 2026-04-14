@@ -1,0 +1,90 @@
+replicaCount: 1
+
+image:
+  repository: ouroboros-agent
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+  hosts:
+    - host: ouroboros.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "250m"
+  limits:
+    memory: "1Gi"
+    cpu: "1000m"
+
+persistence:
+  enabled: true
+  size: 5Gi
+  accessMode: ReadWriteOnce
+  storageClass: ""
+
+podAnnotations: {}
+podLabels: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: []
+
+startupProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  failureThreshold: 12
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: false
+  ingress: []
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+
+# Non-sensitive configuration
+config:
+  OUROBOROS_WEB_PORT: "8080"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  OUROBOROS_DB_DIR: ".ouroboros"
+  OUROBOROS_SKILL_DIR: "skills"
+  LLM_PROVIDER: "openai"
+  LLM_MODEL: "gpt-4o-mini"
+  FALLBACK_LLM_PROVIDER: "openai"
+  FALLBACK_LLM_MODEL: "gpt-4o-mini"
+  FEISHU_WEBHOOK_PORT: "3000"
+  FEISHU_WEBHOOK_PATH: "/feishu/webhook"
+
+# Sensitive configuration - fill in your real values before deploying
+secrets:
+  WEB_API_TOKEN: "CHANGE_ME"
+  LLM_API_KEY: ""
+  FALLBACK_LLM_API_KEY: ""
+  FEISHU_APP_ID: ""
+  FEISHU_APP_SECRET: ""
+  FEISHU_VERIFICATION_TOKEN: ""

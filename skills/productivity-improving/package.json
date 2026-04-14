@@ -1,0 +1,31 @@
+{
+  "name": "productivity-improving",
+  "version": "1.0.5",
+  "description": "Personal productivity tracking and analysis skill - records activities, tracks time, categorizes tasks, and generates daily insights",
+  "main": "SKILL.md",
+  "keywords": [
+    "productivity",
+    "time-tracking",
+    "analytics",
+    "daily-log",
+    "efficiency",
+    "work-life-balance",
+    "openclaw-skill"
+  ],
+  "author": "harrylabsj",
+  "license": "MIT",
+  "homepage": "https://clawhub.ai/harrylabsj/productivity-improving",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/harrylabsj/productivity-improving.git"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

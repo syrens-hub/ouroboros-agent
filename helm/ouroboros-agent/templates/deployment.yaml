@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ouroboros-agent.fullname" . }}
+  labels:
+    {{- include "ouroboros-agent.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ouroboros-agent.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "ouroboros-agent.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "ouroboros-agent.fullname" . }}-config
+            - secretRef:
+                name: {{ include "ouroboros-agent.fullname" . }}-secrets
+          env:
+            - name: NODE_ENV
+              value: "production"
+          volumeMounts:
+            - name: data
+              mountPath: /app/.ouroboros
+            - name: skills
+              mountPath: /app/skills
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          {{- if .Values.startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: {{ .Values.startupProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
+          {{- end }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "ouroboros-agent.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: skills
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

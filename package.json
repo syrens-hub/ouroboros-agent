@@ -1,0 +1,59 @@
+{
+  "name": "ouroboros-agent",
+  "version": "0.1.0",
+  "description": "A self-modifying agent system: Claude Code skeleton + Hermes blood + OpenClaw nerves",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "tsx main.ts",
+    "test": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "audit:ci": "audit-ci --config ./audit-ci.json",
+    "secrets:scan": "detect-secrets scan --baseline .secrets.baseline 2>/dev/null || detect-secrets scan 2>/dev/null",
+    "web:dev": "cd web && npm run dev",
+    "web:build": "cd web && npm run build",
+    "web:serve": "tsx web/server.ts",
+    "web:start": "npm run web:build && npm run web:serve",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "e2e:report": "playwright show-report"
+  },
+  "dependencies": {
+    "@sentry/node": "^10.48.0",
+    "@slack/web-api": "^7.15.0",
+    "@types/ws": "^8.18.1",
+    "@xenova/transformers": "^2.17.2",
+    "better-sqlite3": "^12.8.0",
+    "dotenv": "^17.4.1",
+    "ioredis": "^5.10.1",
+    "node-cron": "^4.2.1",
+    "pg": "^8.13.0",
+    "playwright-core": "^1.59.1",
+    "usearch": "^2.21.4",
+    "uuid": "^13.0.0",
+    "ws": "^8.20.0",
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.59.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.19.39",
+    "@types/node-cron": "^3.0.11",
+    "@types/pg": "^8.11.10",
+    "@types/uuid": "^10.0.0",
+    "@vitest/coverage-v8": "^1.6.1",
+    "audit-ci": "^7.1.0",
+    "eslint": "^9.39.4",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.58.1",
+    "vitest": "^1.4.0"
+  }
+}
