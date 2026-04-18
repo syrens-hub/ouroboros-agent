@@ -5,7 +5,9 @@
  */
 
 import { getDb } from "../../core/db-manager.ts";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 import type { SystemSnapshot } from "./self-healing-types.ts";
+import type { BaseMessage } from "../../types/index.ts";
 
 export class SnapshotManager {
   private snapshots: Map<string, SystemSnapshot> = new Map();
@@ -85,11 +87,11 @@ export class SnapshotManager {
       id: row.id,
       sessionId: row.session_id,
       timestamp: row.timestamp,
-      messages: JSON.parse(row.messages),
-      memoryState: JSON.parse(row.memory_state),
-      toolStates: JSON.parse(row.tool_states),
-      config: JSON.parse(row.config),
-      metadata: JSON.parse(row.metadata),
+      messages: safeJsonParse<BaseMessage[]>(row.messages, "snapshot messages") ?? [],
+      memoryState: safeJsonParse<Record<string, unknown>>(row.memory_state, "snapshot memory") ?? {},
+      toolStates: safeJsonParse<Record<string, unknown>>(row.tool_states, "snapshot tools") ?? {},
+      config: safeJsonParse<Record<string, unknown>>(row.config, "snapshot config") ?? {},
+      metadata: safeJsonParse<Record<string, unknown>>(row.metadata, "snapshot metadata") ?? {},
     };
     this.snapshots.set(id, snapshot);
     return snapshot;

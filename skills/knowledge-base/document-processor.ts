@@ -6,6 +6,7 @@
 
 import { createHash } from "crypto";
 import { readFile } from "fs/promises";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 
 export interface DocumentChunk {
   id: string;
@@ -41,11 +42,11 @@ function generateId(prefix: string): string {
 export async function extractText(filePath: string): Promise<string> {
   const content = await readFile(filePath, "utf-8");
   if (filePath.endsWith(".json")) {
-    try {
-      return JSON.stringify(JSON.parse(content), null, 2);
-    } catch {
-      return content;
+    const parsed = safeJsonParse(content, "json document");
+    if (parsed !== undefined) {
+      return JSON.stringify(parsed, null, 2);
     }
+    return content;
   }
   return content;
 }

@@ -12,6 +12,7 @@ import type { Tool, Result } from "../../types/index.ts";
 import { ok, err } from "../../types/index.ts";
 import { logger } from "../../core/logger.ts";
 import { appConfig } from "../../core/config.ts";
+import { credentialStrip } from "../../core/safe-utils.ts";
 
 import { MCPConnectionManager, initMcpConnectionManager } from "../../skills/mcp/index.ts";
 import { persistMcpOutput } from "../../skills/mcp/output-storage.ts";
@@ -44,30 +45,6 @@ async function loadMcpSdk() {
     logger.debug("MCP SDK not installed; MCP support disabled", { error: String(e) });
     return null;
   }
-}
-
-export function credentialStrip(str: string): string {
-  let result = str;
-  
-  // 匹配常见的凭证格式并替换为 ***
-  const replacements: [RegExp, string][] = [
-    // key=value 或 key: value 格式
-    [/([a-zA-Z0-9_-]*(api[_-]?key|token|secret|password|auth|credential)[\s]*[:=][\s]*["']?)[^"']+["']?/gi, '$1***'],
-    // Bearer token
-    [/bearer\s+[a-zA-Z0-9_.-]+/gi, 'Bearer ***'],
-    // Authorization: Bearer xxx
-    [/authorization:\s*bearer\s+[a-zA-Z0-9_.-]+/gi, 'Authorization: Bearer ***'],
-    // X-Api-Key: xxx
-    [/x-api-key:\s*[a-zA-Z0-9_.-]+/gi, 'X-Api-Key: ***'],
-    // 连接字符串中的密码 (user:pass@host)
-    [/[a-zA-Z0-9_.-]+:[a-zA-Z0-9_.-]+@/g, '***:***@'],
-  ];
-  
-  for (const [pattern, replacement] of replacements) {
-    result = result.replace(pattern, replacement);
-  }
-  
-  return result;
 }
 
 export class McpClient {

@@ -6,8 +6,8 @@ import { getRunnerPoolStats } from "../../runner-pool.ts";
 import { getWorkerRunnerStats } from "../../../skills/orchestrator/index.ts";
 import { getWsClientCount, getWsConnectionsTotal } from "../../ws-server.ts";
 import { MAX_METRIC_HISTOGRAM_KEYS } from "../constants.ts";
-import type { ReqContext } from "../shared.ts";
-import { getClientIp } from "../shared.ts";
+import type { ReqContext } from "./context.ts";
+import { getClientIp } from "./context.ts";
 import type { TaskScheduler } from "../../../skills/task-scheduler/index.ts";
 
 const requestCounter = new Map<string, number>();

@@ -9,6 +9,7 @@ import { getDb } from "../../core/db-manager.ts";
 import type { DbAdapter } from "../../core/db-adapter.ts";
 import { eventBus } from "../../core/event-bus.ts";
 import { logger } from "../../core/logger.ts";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 import { evolutionVersionManager } from "../evolution-version-manager/index.ts";
 import { executeEvolution } from "../evolution-orchestrator/index.ts";
 import { changeFreezePeriod } from "../safety-controls/index.ts";
@@ -138,12 +139,8 @@ export class ExecutionDaemon {
 
     if (!row) return undefined;
 
-    try {
-      const filesChanged = JSON.parse(row.files_changed) as string[];
-      return { versionId: row.id, filesChanged };
-    } catch {
-      return { versionId: row.id, filesChanged: [] };
-    }
+    const filesChanged = safeJsonParse<string[]>(row.files_changed, "execution files") ?? [];
+    return { versionId: row.id, filesChanged };
   }
 
   private async _execute(pending: { versionId: string; filesChanged: string[] }): Promise<void> {

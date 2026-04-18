@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { existsSync, mkdirSync, appendFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import { randomUUID } from "crypto";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 
 export interface EvolutionRecord {
   id: string;
@@ -156,11 +157,7 @@ export function getEvolutionByCommit(hash: string): EvolutionRecord | undefined 
 }
 
 function safeParseJson(raw: string): string[] {
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed;
-    return [];
-  } catch {
-    return [];
-  }
+  const parsed = safeJsonParse<unknown>(raw, "evolution metadata");
+  if (Array.isArray(parsed)) return parsed;
+  return [];
 }

@@ -10,6 +10,7 @@ import { readdirSync, readFileSync, statSync, existsSync } from "fs";
 import { join, basename, extname } from "path";
 import { getDb } from "../core/db-manager.ts";
 import type { BaseMessage } from "../types/index.ts";
+import { safeJsonParse } from "../core/safe-utils.ts";
 
 const AGENTS_ROOT = join(process.cwd(), ".openclaw-migrated", "agents");
 
@@ -68,11 +69,7 @@ function* walkJsonlFiles(dir: string): Generator<string> {
 }
 
 function parseEvent(line: string): OpenClawEvent | null {
-  try {
-    return JSON.parse(line) as OpenClawEvent;
-  } catch {
-    return null;
-  }
+  return safeJsonParse<OpenClawEvent>(line, "openclaw event") ?? null;
 }
 
 function convertToolCallBlock(block: unknown): { type: "tool_use"; id: string; name: string; input: unknown } | null {

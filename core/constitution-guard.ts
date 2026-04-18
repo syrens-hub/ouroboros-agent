@@ -17,6 +17,7 @@ import type { Result } from "../types/index.ts";
 import { ok, err } from "../types/index.ts";
 import { notificationBus } from "../skills/notification/index.ts";
 import { logger } from "./logger.ts";
+import { safeJsonParse } from "./safe-utils.ts";
 
 // Cached, platform-normalized PROJECT_ROOT — computed once at module load.
 // normalize() and resolve() are called here so every guard function below
@@ -67,19 +68,9 @@ function isPackageJson(filePath: string): boolean {
 }
 
 function hasNewNetworkDependency(original: string, modified: string): boolean {
-  try {
-    const orig = JSON.parse(original);
-    const mod = JSON.parse(modified);
-    const origDeps = new Set(Object.keys(orig.dependencies || {}));
-    const modDeps = Object.keys(mod.dependencies || {});
-    for (const dep of modDeps) {
-      if (!origDeps.has(dep)) {
-        // Any new dependency is treated as a potential network-outbound risk
-        return true;
-      }
-    }
-    return false;
-  } catch {
+  const orig = safeJsonParse<Record<string, unknown>>(original, "package.json original");
+  const mod = safeJsonParse<Record<string, unknown>>(modified, "package.json modified");
+  if (!orig || !mod) {
     logger.warn(
       "hasNewNetworkDependency: failed to parse package.json — rejecting to be conservative",
       { originalLength: original.length, modifiedLength: modified.length }
@@ -87,6 +78,15 @@ function hasNewNetworkDependency(original: string, modified: string): boolean {
     // Fail-close: any parse error is treated as a potential dependency change
     return true;
   }
+  const origDeps = new Set(Object.keys((orig.dependencies as Record<string, unknown>) || {}));
+  const modDeps = Object.keys((mod.dependencies as Record<string, unknown>) || {});
+  for (const dep of modDeps) {
+    if (!origDeps.has(dep)) {
+      // Any new dependency is treated as a potential network-outbound risk
+      return true;
+    }
+  }
+  return false;
 }
 
 export interface GuardEvaluation {

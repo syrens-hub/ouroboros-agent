@@ -5,6 +5,7 @@
 
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { safeFailOpen } from "./safe-utils.ts";
+import type { BaseMessage } from "../types/index.ts";
 
 export function maskApiKey(str: string): string {
   return str
@@ -42,7 +43,9 @@ export function timeoutSignal(ms: number): AbortSignal {
   }
   // Polyfill for Node.js < 20.11.0
   const ctrl = new AbortController();
-  setTimeout(() => ctrl.abort(), ms);
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  // Clean up the timer if the signal is externally aborted (e.g., request completed early)
+  ctrl.signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
   return ctrl.signal;
 }
 
@@ -52,4 +55,75 @@ export function extractZodSchema(schema: unknown): Record<string, unknown> {
     "extractZodSchema",
     {}
   );
+}
+
+// =============================================================================
+// Content formatting helpers for multimodal support
+// =============================================================================
+
+export function formatOpenAIMessageContent(content: BaseMessage["content"]): string | unknown[] {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((block) => {
+      if (block && typeof block === "object" && "type" in block) {
+        const b = block as { type: string };
+        if (b.type === "image_url" || b.type === "text") return b;
+      }
+      return { type: "text", text: JSON.stringify(block) };
+    });
+  }
+  return JSON.stringify(content);
+}
+
+export function formatAnthropicContent(content: BaseMessage["content"]): string | unknown[] {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((block) => {
+      if (block && typeof block === "object" && "type" in block) {
+        const b = block as { type: string; text?: string; image_url?: { url?: string } };
+        if (b.type === "text") return b;
+        if (b.type === "image_url" && b.image_url?.url) {
+          const url = b.image_url.url;
+          if (url.startsWith("data:")) {
+            const match = url.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              return {
+                type: "image",
+                source: { type: "base64", media_type: match[1], data: match[2] },
+              };
+            }
+          }
+          return { type: "text", text: `[Image: ${url}]` };
+        }
+      }
+      return { type: "text", text: JSON.stringify(block) };
+    });
+  }
+  return JSON.stringify(content);
+}
+
+export function formatGeminiParts(
+  content: BaseMessage["content"]
+): Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> {
+  if (typeof content === "string") return [{ text: content }];
+  if (Array.isArray(content)) {
+    return content.map((block) => {
+      if (block && typeof block === "object" && "type" in block) {
+        const b = block as { type: string; text?: string; image_url?: { url?: string } };
+        if (b.type === "text") return { text: b.text || "" };
+        if (b.type === "image_url" && b.image_url?.url) {
+          const url = b.image_url.url;
+          if (url.startsWith("data:")) {
+            const match = url.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              return { inlineData: { mimeType: match[1], data: match[2] } };
+            }
+          }
+          return { text: `[Image: ${url}]` };
+        }
+      }
+      return { text: JSON.stringify(block) };
+    });
+  }
+  return [{ text: JSON.stringify(content) }];
 }

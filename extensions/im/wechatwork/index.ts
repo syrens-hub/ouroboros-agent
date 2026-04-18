@@ -13,6 +13,7 @@ import type {
   ChannelMember,
 } from "../../../types/index.ts";
 import { ok, err, type Result } from "../../../types/index.ts";
+import { safeJsonParse } from "../../../core/safe-utils.ts";
 
 type MessageHandler = (msg: ChannelMessage) => void;
 
@@ -113,10 +114,8 @@ class WeChatWorkBot implements ChannelInboundAdapter, ChannelOutboundAdapter {
       }
     }
 
-    let payload: WeChatWorkWebhookPayload;
-    try {
-      payload = JSON.parse(body);
-    } catch {
+    const payload = safeJsonParse<WeChatWorkWebhookPayload>(body, "wechatwork payload");
+    if (!payload) {
       respond(res, 400, { error: "invalid payload" });
       return;
     }

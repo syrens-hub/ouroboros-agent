@@ -6,7 +6,7 @@
  */
 
 import { getRelatedClaims, type RelationType } from "./claim-graph.ts";
-import { getClaim, updateClaim } from "./index.ts";
+import { getClaim, updateClaim } from "./store.ts";
 
 export interface ConfidencePropagationResult {
   claimId: string;

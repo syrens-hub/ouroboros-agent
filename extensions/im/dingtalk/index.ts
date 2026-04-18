@@ -13,6 +13,7 @@ import type {
   ChannelMember,
 } from "../../../types/index.ts";
 import { ok, err, type Result } from "../../../types/index.ts";
+import { safeJsonParse } from "../../../core/safe-utils.ts";
 
 type MessageHandler = (msg: ChannelMessage) => void;
 
@@ -111,10 +112,8 @@ class DingTalkBot implements ChannelInboundAdapter, ChannelOutboundAdapter {
     }
 
     const body = await readBody(req);
-    let payload: DingTalkWebhookPayload;
-    try {
-      payload = JSON.parse(body);
-    } catch {
+    const payload = safeJsonParse<DingTalkWebhookPayload>(body, "dingtalk payload");
+    if (!payload) {
       respond(res, 400, { error: "invalid payload" });
       return;
     }

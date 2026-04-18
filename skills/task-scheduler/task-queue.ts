@@ -3,6 +3,7 @@ import { join } from "path";
 import { Queue, Worker, type Job } from "bullmq";
 import { Redis } from "ioredis";
 import { appConfig } from "../../core/config.ts";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 
 export interface PersistedTask {
   id: string;
@@ -194,7 +195,7 @@ export class RedisTaskQueue implements TaskQueue {
     await this.redis.set(this.taskKey(task.id), JSON.stringify(task));
 
     const opts: Record<string, unknown> = { jobId: task.id };
-    const parsedOptions = JSON.parse(task.options || "{}") as Record<string, unknown>;
+    const parsedOptions = safeJsonParse<Record<string, unknown>>(task.options || "{}", "task queue options") ?? {};
 
     if (task.type === "cron") {
       if (parsedOptions.cron) {
@@ -234,7 +235,7 @@ export class RedisTaskQueue implements TaskQueue {
     for (const job of jobs) {
       const stored = await this.redis.get(this.taskKey(job.id || ""));
       if (stored) {
-        tasks.push(JSON.parse(stored) as PersistedTask);
+        tasks.push(safeJsonParse<PersistedTask>(stored, "redis stored task") ?? this.jobToPersistedTask(job));
       } else {
         tasks.push(this.jobToPersistedTask(job));
       }

@@ -10,6 +10,7 @@ import { buildTool } from "../../core/tool-framework.ts";
 import { callLLMWithResilience } from "../../core/llm-resilience.ts";
 import type { LLMConfig } from "../../core/llm-router.ts";
 import type { BaseMessage } from "../../types/index.ts";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 
 export const llmTaskTool = buildTool({
   name: "llm_task",
@@ -66,13 +67,9 @@ export const llmTaskTool = buildTool({
           : JSON.stringify(result.data.content);
 
     let parsed: unknown = null;
-    try {
-      const jsonMatch = text.match(/```json\n?([\s\S]*?)\n?```/);
-      const jsonStr = jsonMatch ? jsonMatch[1].trim() : text.trim();
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      parsed = null;
-    }
+    const jsonMatch = text.match(/```json\n?([\s\S]*?)\n?```/);
+    const jsonStr = jsonMatch ? jsonMatch[1].trim() : text.trim();
+    parsed = safeJsonParse(jsonStr, "llm task response") ?? null;
 
     if (outputSchema && parsed) {
       const requiredKeys = Object.keys(outputSchema);

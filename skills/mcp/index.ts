@@ -8,7 +8,7 @@
 import type { Tool, Result } from "../../types/index.ts";
 import { ok, err } from "../../types/index.ts";
 import { logger } from "../../core/logger.ts";
-import { credentialStrip } from "../../tools/mcp-client/index.ts";
+import { credentialStrip } from "../../core/safe-utils.ts";
 import { jsonSchemaToZod } from "./utils.ts";
 
 export type MCPServerConfig = {

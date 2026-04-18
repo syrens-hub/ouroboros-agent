@@ -10,7 +10,7 @@ import { runConsensus, type AgentAnswer } from "../crewai/consensus-engine.ts";
 import { semanticConstitutionChecker } from "../semantic-constitution/index.ts";
 import { mapFilesToTests } from "../incremental-test/index.ts";
 import { budgetController } from "../safety-controls/index.ts";
-import type { EvolutionProposal } from "../evolution-orchestrator/index.ts";
+import type { EvolutionProposal } from "../evolution-orchestrator/types.ts";
 
 export type ReviewVerdict = "approve" | "reject" | "delay";
 

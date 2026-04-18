@@ -17,6 +17,7 @@ import { join } from "path";
 import Database from "better-sqlite3";
 import { createTrajectoryCompressor } from "../skills/learning/index.ts";
 import type { TrajectoryEntry } from "../types/index.ts";
+import { safeJsonParse } from "../core/safe-utils.ts";
 
 const DB_PATH = join(process.cwd(), ".ouroboros", "session.db");
 const OUT_DIR = join(process.cwd(), ".ouroboros");
@@ -88,7 +89,7 @@ async function main() {
   const exported: ShareGPTConversation[] = [];
 
   for (const row of rows) {
-    let entries: TrajectoryEntry[] = JSON.parse(row.entries);
+    let entries = safeJsonParse<TrajectoryEntry[]>(row.entries, "trajectory entries") ?? [];
 
     // Optionally compress if large
     const tokenEstimate = JSON.stringify(entries).length / 4;

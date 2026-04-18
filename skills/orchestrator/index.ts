@@ -14,6 +14,7 @@ import { notificationBus } from "../notification/index.ts";
 import { logger } from "../../core/logger.ts";
 import { getMessages } from "../../core/session-db.ts";
 import { insertWorkerTask, updateWorkerTask, listPendingWorkerTasks } from "../../core/repositories/worker-tasks.ts";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 
 import { WORKER_TIMEOUT_MS } from "../../web/routes/constants.ts";
 // 1 minute hard timeout for worker execution
@@ -276,13 +277,9 @@ export async function resumeQueuedWorkerTasks(deps: {
     const allTools = deps.getGlobalTools().filter((t) => t.name !== "delegate_task");
     let tools = allTools;
     if (task.allowed_tools) {
-      try {
-        const allowed = JSON.parse(task.allowed_tools) as string[];
-        if (Array.isArray(allowed) && allowed.length > 0) {
-          tools = allTools.filter((t) => allowed.includes(t.name));
-        }
-      } catch {
-        // ignore parse error, use allTools
+      const allowed = safeJsonParse<string[]>(task.allowed_tools, "worker allowed tools");
+      if (Array.isArray(allowed) && allowed.length > 0) {
+        tools = allTools.filter((t) => allowed.includes(t.name));
       }
     }
 

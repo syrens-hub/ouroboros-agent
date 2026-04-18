@@ -2,6 +2,7 @@ import { getDb } from "../db-manager.ts";
 import { timedQuery } from "../../skills/telemetry/index.ts";
 import type { TrajectoryEntry, Result } from "../../types/index.ts";
 import { ok, err } from "../../types/index.ts";
+import { safeJsonParse } from "../safe-utils.ts";
 
 export async function saveTrajectory(
   sessionId: string,
@@ -33,7 +34,7 @@ export async function getTrajectories(sessionId: string): Promise<Result<Traject
       const rows = (await db
         .prepare("SELECT entries FROM trajectories WHERE session_id = ? ORDER BY id ASC")
         .all(sessionId)) as { entries: string }[];
-      return ok(rows.map((r) => JSON.parse(r.entries)));
+      return ok(rows.map((r) => safeJsonParse<TrajectoryEntry[]>(r.entries, "trajectory entries") ?? []));
     });
   } catch (e) {
     return err({ code: "DB_ERROR", message: String(e) });
@@ -118,8 +119,8 @@ export async function getTraceEvents(sessionId: string, turn?: number): Promise<
           timestamp: r.timestamp,
           type: r.type,
           actor: r.actor,
-          input: r.input ? JSON.parse(r.input) : undefined,
-          output: r.output ? JSON.parse(r.output) : undefined,
+          input: r.input ? safeJsonParse(r.input, "trace input") : undefined,
+          output: r.output ? safeJsonParse(r.output, "trace output") : undefined,
           latencyMs: r.latency_ms ?? undefined,
           tokens: r.tokens ?? undefined,
         }))

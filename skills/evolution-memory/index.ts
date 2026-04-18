@@ -6,7 +6,7 @@
  */
 
 import type { KnowledgeBase } from "../knowledge-base/index.ts";
-import type { EvolutionProposal, PipelineResult } from "../evolution-orchestrator/index.ts";
+import type { EvolutionProposal, PipelineResult } from "../evolution-orchestrator/types.ts";
 
 export interface EvolutionMemoryEntry {
   proposal: EvolutionProposal;

@@ -13,6 +13,7 @@
 import { getDb } from "../../core/db-manager.ts";
 import type { DbAdapter } from "../../core/db-adapter.ts";
 import { logger } from "../../core/logger.ts";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 import { basename, dirname, extname } from "path";
 
 export type TestRunMode = "full" | "incremental";
@@ -72,11 +73,7 @@ function serializeTests(tests: string[]): string {
 }
 
 function parseTests(raw: string): string[] {
-  try {
-    return JSON.parse(raw) as string[];
-  } catch {
-    return [];
-  }
+  return safeJsonParse<string[]>(raw, "test list") ?? [];
 }
 
 /** Map a single changed file to its likely test file(s). */

@@ -4,6 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { safeJsonParse } from "../../../core/safe-utils.ts";
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const ACTIVITIES_FILE = path.join(DATA_DIR, 'activities.json');
@@ -61,11 +62,8 @@ function loadActivities(): Activity[] {
   if (!fs.existsSync(ACTIVITIES_FILE)) {
     return [];
   }
-  try {
-    return JSON.parse(fs.readFileSync(ACTIVITIES_FILE, 'utf-8')) as Activity[];
-  } catch {
-    return [];
-  }
+  const activities = safeJsonParse<Activity[]>(fs.readFileSync(ACTIVITIES_FILE, 'utf-8'), "activities file");
+  return activities ?? [];
 }
 
 function saveActivities(activities: Activity[]): void {

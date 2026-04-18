@@ -3,6 +3,7 @@ import { appConfig } from "../config.ts";
 import { timedQuery } from "../../skills/telemetry/index.ts";
 import type { BaseMessage, Result } from "../../types/index.ts";
 import { ok, err } from "../../types/index.ts";
+import { safeJsonParse } from "../safe-utils.ts";
 
 export async function appendMessage(
   sessionId: string,
@@ -54,12 +55,8 @@ export async function getMessages(
 
       const messages: BaseMessage[] = rows.map((r) => {
         let content: BaseMessage["content"] = r.content;
-        try {
-          const parsed = JSON.parse(r.content);
-          if (Array.isArray(parsed) || typeof parsed === "object") content = parsed as BaseMessage["content"];
-        } catch {
-          // keep as string
-        }
+        const parsed = safeJsonParse(r.content, "message content");
+        if (parsed !== undefined && (Array.isArray(parsed) || typeof parsed === "object")) content = parsed as BaseMessage["content"];
         return {
           role: r.role as BaseMessage["role"],
           content,

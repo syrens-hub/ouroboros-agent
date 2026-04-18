@@ -1,3 +1,5 @@
+import { safeJsonParse } from "../../core/safe-utils.ts";
+
 /**
  * Handoff Protocol
  * ================
@@ -95,13 +97,9 @@ export function serializeHandoff(handoff: HandoffContext): string {
 }
 
 export function deserializeHandoff(raw: string): HandoffContext | undefined {
-  try {
-    const parsed = JSON.parse(raw) as HandoffContext;
-    if (parsed.fromAgent && parsed.toAgent && parsed.taskId && parsed.summary !== undefined) {
-      return parsed;
-    }
-    return undefined;
-  } catch {
-    return undefined;
+  const parsed = safeJsonParse<HandoffContext>(raw, "handoff context");
+  if (parsed && parsed.fromAgent && parsed.toAgent && parsed.taskId && parsed.summary !== undefined) {
+    return parsed;
   }
+  return undefined;
 }

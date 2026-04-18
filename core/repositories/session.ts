@@ -71,12 +71,29 @@ export async function listSessions(
   }, "listSessions DB error", []);
 }
 
+const SESSION_COLUMNS = new Set([
+  "parent_session_id",
+  "title",
+  "model",
+  "provider",
+  "status",
+  "message_count",
+  "tool_call_count",
+  "turn_count",
+  "estimated_cost_usd",
+]);
+
 export async function updateSession(id: string, fields: Record<string, unknown>): Promise<Result<void>> {
   try {
     const db = getDb();
     return await timedQuery("session:updateSession", async () => {
       const keys = Object.keys(fields);
       if (keys.length === 0) return ok(undefined);
+      for (const k of keys) {
+        if (!SESSION_COLUMNS.has(k)) {
+          return err({ code: "INVALID_FIELD", message: `Column '${k}' is not allowed in session updates.` });
+        }
+      }
       const setClause = keys.map((k) => `${k} = ?`).join(", ");
       const stmt = db.prepare(`UPDATE sessions SET ${setClause}, updated_at = ? WHERE id = ?`);
       await stmt.run(...keys.map((k) => fields[k]), Date.now(), id);

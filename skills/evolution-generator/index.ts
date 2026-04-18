@@ -12,7 +12,7 @@
 
 import { readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { resolve, relative, join, extname } from "path";
-import type { EvolutionProposal } from "../evolution-orchestrator/index.ts";
+import type { EvolutionProposal } from "../evolution-orchestrator/types.ts";
 import { logger } from "../../core/logger.ts";
 
 const PROJECT_ROOT = resolve(process.cwd());

@@ -28,6 +28,7 @@ import { checkRateLimit } from "../../../skills/rate-limiter/index.ts";
 import { createHash, createDecipheriv, createHmac } from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { basename, extname } from "path";
+import { safeJsonParse } from "../../../core/safe-utils.ts";
 
 function sha256Hex(key: string): string {
   return createHash("sha256").update(key).digest("hex");
@@ -44,7 +45,9 @@ export function decryptFeishuBody(encryptKey: string, encryptedBase64: string): 
   // Remove PKCS7 padding manually
   const padLen = decrypted[decrypted.length - 1];
   const unpadded = decrypted.slice(0, decrypted.length - padLen);
-  return JSON.parse(unpadded.toString("utf-8"));
+  const result = safeJsonParse<Record<string, unknown>>(unpadded.toString("utf-8"), "feishu decrypted body");
+  if (!result) throw new SyntaxError("Invalid JSON in decrypted body");
+  return result;
 }
 
 export function isFreshTimestamp(ts: string | number, windowMinutes = 1): boolean {
@@ -473,16 +476,20 @@ class FeishuBot implements ChannelInboundAdapter, ChannelOutboundAdapter {
       }
     }
 
-    let payload: FeishuWebhookPayload;
+    let payload: FeishuWebhookPayload | undefined;
     try {
       if (cfg.encryptKey) {
         // Decrypt AES-256-CBC body when encrypt key is configured
         const decrypted = decryptFeishuBody(cfg.encryptKey, body);
         payload = decrypted as FeishuWebhookPayload;
       } else {
-        payload = JSON.parse(body);
+        payload = safeJsonParse<FeishuWebhookPayload>(body, "feishu payload");
       }
     } catch {
+      respond(res, 400, { error: "invalid payload" });
+      return;
+    }
+    if (!payload) {
       respond(res, 400, { error: "invalid payload" });
       return;
     }
@@ -531,12 +538,12 @@ class FeishuBot implements ChannelInboundAdapter, ChannelOutboundAdapter {
     let text = "";
     let imageUrlOrKey = "";
     let fileKey = "";
-    try {
-      const parsed = JSON.parse(msg.content) as { text?: string; image_key?: string; file_key?: string; image_url?: string };
+    const parsed = safeJsonParse<{ text?: string; image_key?: string; file_key?: string; image_url?: string }>(msg.content, "feishu message content");
+    if (parsed) {
       text = parsed.text || "";
       imageUrlOrKey = parsed.image_url || parsed.image_key || "";
       fileKey = parsed.file_key || "";
-    } catch {
+    } else {
       text = msg.content;
     }
 

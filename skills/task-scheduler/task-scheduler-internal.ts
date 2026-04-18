@@ -6,6 +6,7 @@
  */
 
 import cron from "node-cron";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 import type {
   Task,
   TaskOptions,
@@ -73,11 +74,7 @@ export function taskToPersistedTask(task: Task): PersistedTask {
 
 /** Parse persisted options JSON */
 export function parseOptions(optionsJson: string): TaskOptions {
-  try {
-    return JSON.parse(optionsJson) as TaskOptions;
-  } catch {
-    return {};
-  }
+  return safeJsonParse<TaskOptions>(optionsJson, "task options") ?? {};
 }
 
 /** Restore a Task from PersistedTask */

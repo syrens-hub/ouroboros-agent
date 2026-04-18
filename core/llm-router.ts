@@ -19,6 +19,7 @@ import type {
 import { ok, err } from "../types/index.ts";
 import { sanitizeMessageForLLM } from "./prompt-defense.ts";
 export { sanitizeMessageForLLM } from "./prompt-defense.ts";
+import { safeJsonParse } from "./safe-utils.ts";
 
 // Re-export helpers from llm-stream-helpers for backward compatibility
 export { maskApiKey, extractZodSchema } from "./llm-stream-helpers.ts";
@@ -38,91 +39,18 @@ import {
 // Provider Types
 // =============================================================================
 
-export type LLMProvider = "openai" | "anthropic" | "local" | "minimax" | "qwen" | "gemini";
-
-export interface LLMConfig {
-  provider: LLMProvider;
-  apiKey?: string;
-  baseUrl?: string;
-  model: string;
-  maxTokens?: number;
-  temperature?: number;
-}
-
-export type LLMStreamChunk =
-  | { type: "text"; text: string }
-  | { type: "tool_use"; toolUse: Partial<ToolUseBlock> }
-  | { type: "usage"; usage: { promptTokens: number; completionTokens: number; totalTokens: number } }
-  | { type: "response_headers"; headers: Record<string, string> };
+import type { LLMConfig, LLMStreamChunk } from "./llm-types.ts";
+export type { LLMProvider, LLMConfig, LLMStreamChunk } from "./llm-types.ts";
 
 // =============================================================================
 // Content formatting helpers for multimodal support
 // =============================================================================
 
-export function formatOpenAIMessageContent(content: BaseMessage["content"]): string | unknown[] {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content.map((block) => {
-      if (block && typeof block === "object" && "type" in block) {
-        const b = block as { type: string };
-        if (b.type === "image_url" || b.type === "text") return b;
-      }
-      return { type: "text", text: JSON.stringify(block) };
-    });
-  }
-  return JSON.stringify(content);
-}
-
-export function formatAnthropicContent(content: BaseMessage["content"]): string | unknown[] {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content.map((block) => {
-      if (block && typeof block === "object" && "type" in block) {
-        const b = block as { type: string; text?: string; image_url?: { url?: string } };
-        if (b.type === "text") return b;
-        if (b.type === "image_url" && b.image_url?.url) {
-          const url = b.image_url.url;
-          if (url.startsWith("data:")) {
-            const match = url.match(/^data:([^;]+);base64,(.+)$/);
-            if (match) {
-              return {
-                type: "image",
-                source: { type: "base64", media_type: match[1], data: match[2] },
-              };
-            }
-          }
-          return { type: "text", text: `[Image: ${url}]` };
-        }
-      }
-      return { type: "text", text: JSON.stringify(block) };
-    });
-  }
-  return JSON.stringify(content);
-}
-
-export function formatGeminiParts(content: BaseMessage["content"]): Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> {
-  if (typeof content === "string") return [{ text: content }];
-  if (Array.isArray(content)) {
-    return content.map((block) => {
-      if (block && typeof block === "object" && "type" in block) {
-        const b = block as { type: string; text?: string; image_url?: { url?: string } };
-        if (b.type === "text") return { text: b.text || "" };
-        if (b.type === "image_url" && b.image_url?.url) {
-          const url = b.image_url.url;
-          if (url.startsWith("data:")) {
-            const match = url.match(/^data:([^;]+);base64,(.+)$/);
-            if (match) {
-              return { inlineData: { mimeType: match[1], data: match[2] } };
-            }
-          }
-          return { text: `[Image: ${url}]` };
-        }
-      }
-      return { text: JSON.stringify(block) };
-    });
-  }
-  return [{ text: JSON.stringify(content) }];
-}
+export {
+  formatOpenAIMessageContent,
+  formatAnthropicContent,
+  formatGeminiParts,
+} from "./llm-stream-helpers.ts";
 
 // =============================================================================
 // Unified streaming caller
@@ -210,12 +138,7 @@ export async function callLLM(
   }
   for (const tc of toolCalls.values()) {
     if (!tc.name) continue;
-    let parsedInput: Record<string, unknown>;
-    try {
-      parsedInput = JSON.parse(tc.input);
-    } catch {
-      parsedInput = { raw: tc.input };
-    }
+    const parsedInput: Record<string, unknown> = safeJsonParse<Record<string, unknown>>(tc.input, "tool input", { raw: tc.input });
     contentBlocks.push({
       type: "tool_use",
       id: tc.id,

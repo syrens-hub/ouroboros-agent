@@ -13,6 +13,7 @@ import { resolve, join } from "path";
 import { getDb } from "../../core/db-manager.ts";
 import type { DbAdapter } from "../../core/db-adapter.ts";
 import { logger } from "../../core/logger.ts";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 
 const PROJECT_ROOT = resolve(process.cwd());
 const DEFAULT_SYNC_DIR = join(PROJECT_ROOT, ".ouroboros", "evolution-sync");
@@ -67,7 +68,7 @@ export function exportSuccessfulEvolutions(instanceId = "default", minSuccessRat
         id: `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         name: String(r.description ?? "untitled").slice(0, 50),
         description: String(r.description ?? ""),
-        filesChanged: JSON.parse(files) as string[],
+        filesChanged: safeJsonParse<string[]>(files, "sync files") ?? [],
         diffPattern: "",
         sourceInstance: instanceId,
         successRate: successes / total,
@@ -103,7 +104,7 @@ export function readSyncManifest(path: string): SyncManifest | null {
   if (!existsSync(path)) return null;
   try {
     const raw = readFileSync(path, "utf-8");
-    return JSON.parse(raw) as SyncManifest;
+    return safeJsonParse<SyncManifest>(raw, "sync manifest") ?? null;
   } catch {
     return null;
   }
@@ -165,12 +166,12 @@ export function listImportedTemplates(limit = 50): EvolutionTemplate[] {
       id: String(r.id),
       name: String(r.name),
       description: String(r.description ?? ""),
-      filesChanged: JSON.parse(String(r.files_changed ?? "[]")) as string[],
+      filesChanged: safeJsonParse<string[]>(String(r.files_changed ?? "[]"), "template files") ?? [],
       diffPattern: "",
       sourceInstance: String(r.source_instance),
       successRate: Number(r.success_rate),
       totalApplications: Number(r.total_applications),
-      tags: JSON.parse(String(r.tags ?? "[]")) as string[],
+      tags: safeJsonParse<string[]>(String(r.tags ?? "[]"), "template tags") ?? [],
       createdAt: Number(r.created_at),
     }));
   } catch {

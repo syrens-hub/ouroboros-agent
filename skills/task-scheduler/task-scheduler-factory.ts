@@ -5,9 +5,9 @@
  */
 
 import cron from "node-cron";
-import { TaskScheduler } from "./task-scheduler.ts";
+import { TaskScheduler } from "./task-scheduler-class.ts";
 import { SQLiteTaskQueue, RedisTaskQueue } from "./task-queue.ts";
-import type { TaskScheduler as ITaskScheduler } from "./task-scheduler.ts";
+import type { TaskScheduler as ITaskScheduler } from "./task-scheduler-class.ts";
 
 export function createTaskScheduler(): TaskScheduler {
   return new TaskScheduler();

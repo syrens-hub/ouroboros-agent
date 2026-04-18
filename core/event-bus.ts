@@ -10,6 +10,7 @@ import type { DbAdapter } from "./db-adapter.ts";
 import { hookRegistry, type HookEventType, type HookContext } from "./hook-system.ts";
 export type { HookEventType, HookContext };
 import { logger } from "./logger.ts";
+import { safeJsonParse } from "./safe-utils.ts";
 
 export type BackoffStrategy = "exponential" | "linear" | "fixed";
 
@@ -227,13 +228,10 @@ export class ProductionEventBus {
     db.prepare(`UPDATE dead_letters SET status = 'resolved', resolved_at = ? WHERE id = ?`).run(Date.now(), id);
 
     // Re-queue the event
-    try {
-      const ctx = JSON.parse(String(row.context)) as HookContext;
-      this.emitAsync(String(row.event_type) as HookEventType, ctx);
-      return true;
-    } catch {
-      return false;
-    }
+    const ctx = safeJsonParse<HookContext>(String(row.context), "dead letter context");
+    if (!ctx) return false;
+    this.emitAsync(String(row.event_type) as HookEventType, ctx);
+    return true;
   }
 
   /** Mark a dead-letter as resolved without retry. */

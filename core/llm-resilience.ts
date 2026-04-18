@@ -12,6 +12,7 @@ import { appConfig } from "./config.ts";
 import { logger } from "./logger.ts";
 import { captureException } from "./sentry.ts";
 import { recordLLMCallMetric } from "./llm-metrics.ts";
+import { safeJsonParse } from "./safe-utils.ts";
 import type { BaseMessage, AssistantMessage, Tool, Result } from "../types/index.ts";
 import { err, ok } from "../types/index.ts";
 
@@ -246,12 +247,7 @@ export async function callLLMWithResilience(
           }
           for (const tc of toolCalls.values()) {
             if (!tc.name) continue;
-            let parsedInput: Record<string, unknown>;
-            try {
-              parsedInput = JSON.parse(tc.input);
-            } catch {
-              parsedInput = { raw: tc.input };
-            }
+            const parsedInput: Record<string, unknown> = safeJsonParse<Record<string, unknown>>(tc.input, "tool input", { raw: tc.input });
             contentBlocks.push({ type: "tool_use", id: tc.id, name: tc.name, input: parsedInput });
           }
           const usage = promptTokens + completionTokens > 0

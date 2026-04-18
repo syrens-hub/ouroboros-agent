@@ -10,6 +10,7 @@ import { join, resolve } from "path";
 import { getDb } from "../../core/db-manager.ts";
 import type { DbAdapter } from "../../core/db-adapter.ts";
 import { logger } from "../../core/logger.ts";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 
 export interface EvolutionVersion {
   id: string;
@@ -48,22 +49,14 @@ function serializeFiles(files: string[]): string {
 }
 
 function parseFiles(raw: string): string[] {
-  try {
-    return JSON.parse(raw) as string[];
-  } catch {
-    return [];
-  }
+  return safeJsonParse<string[]>(raw, "version files") ?? [];
 }
 
 function readPackageVersion(): string {
   const pkgPath = resolve(process.cwd(), "package.json");
   if (!existsSync(pkgPath)) return "0.0.0";
-  try {
-    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version?: string };
-    return pkg.version ?? "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
+  const pkg = safeJsonParse<{ version?: string }>(readFileSync(pkgPath, "utf-8"), "package json");
+  return pkg?.version ?? "0.0.0";
 }
 
 function incrementPatch(version: string): string {
@@ -190,11 +183,7 @@ export class EvolutionVersionManager {
     // Restore diffs
     const diffRow = db.prepare(`SELECT diffs FROM evolution_diffs WHERE version_id = ?`).get(id) as { diffs?: string } | undefined;
     if (diffRow?.diffs) {
-      try {
-        version.diffs = JSON.parse(diffRow.diffs) as Record<string, string>;
-      } catch {
-        // Ignore parse errors
-      }
+      version.diffs = safeJsonParse<Record<string, string>>(diffRow.diffs, "version diffs");
     }
     return version;
   }

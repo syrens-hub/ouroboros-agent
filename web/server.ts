@@ -36,6 +36,7 @@ import { pruneDeletedSessions } from "../core/session-db.ts";
 import { dbInitPromise } from "../core/db-manager.ts";
 import { pruneTokenUsage } from "../core/repositories/token-usage.ts";
 import { handleApi } from "./routes/api.ts";
+import { checkRateLimit } from "../skills/rate-limiter/index.ts";
 import { gracefulShutdown } from "./shutdown.ts";
 import { executionDaemon } from "../skills/evolution-executor/index.ts";
 import { registerFeedbackLoop } from "../skills/evolution-feedback/index.ts";
@@ -57,6 +58,7 @@ import {
   taskScheduler,
   channelRegistry,
 } from "./routes/shared.ts";
+import { safeJsonParse } from "../core/safe-utils.ts";
 
 const PORT = appConfig.web.port;
 const WEB_DIST = join(process.cwd(), "web", "dist");
@@ -86,6 +88,18 @@ export function createApp(): Server {
       if (path === "/health" || path === "/ready" || path === "/metrics") {
         await handleApi(req, res, `/api${path}`, ctx);
         return;
+      }
+
+      // Per-IP rate limiting for API and webhook endpoints
+      if (path.startsWith("/api/") || path.startsWith("/webhooks/")) {
+        const clientIp = req.headers["x-forwarded-for"]?.toString().split(",")[0].trim() || req.socket.remoteAddress || "unknown";
+        const rateLimitKey = `http:${clientIp}`;
+        const rateLimit = await checkRateLimit(rateLimitKey, 100, 60_000); // 100 req/min per IP
+        if (!rateLimit.allowed) {
+          res.setHeader("Retry-After", String(Math.ceil(rateLimit.retryAfter / 1000)));
+          json(res, 429, { success: false, error: { message: "Too many requests. Please slow down." } }, ctx);
+          return;
+        }
       }
 
       if (path.startsWith("/api/")) {
@@ -336,7 +350,7 @@ if (isEntrypoint) {
           } else if ("type" in event && event.type === "tool_result" && event.toolUseId) {
             // Detect computer_use result and queue screenshot for sending
             try {
-              const parsed = JSON.parse(event.content);
+              const parsed = safeJsonParse<Record<string, any>>(event.content, "tool result");
               if (parsed && parsed.success && parsed.finalScreenshotPath && existsSync(parsed.finalScreenshotPath)) {
                 computerUseImages.push(parsed.finalScreenshotPath);
               }

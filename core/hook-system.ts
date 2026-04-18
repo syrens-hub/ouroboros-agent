@@ -19,6 +19,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "fs";
 import { join, resolve } from "path";
 import { appConfig } from "./config.ts";
 import { logger } from "./logger.ts";
+import { safeJsonParse } from "./safe-utils.ts";
 
 export type HookEventType =
   | "agent:turnStart"
@@ -143,7 +144,7 @@ export class HookRegistry {
       let manifest: { name?: string; events?: string[] } | undefined;
       try {
         if (existsSync(jsonPath)) {
-          manifest = JSON.parse(readFileSync(jsonPath, "utf-8"));
+          manifest = safeJsonParse<{ name?: string; events?: string[] }>(readFileSync(jsonPath, "utf-8"), "hook manifest");
         } else if (existsSync(yamlPath)) {
           logger.warn("YAML hook manifest found but yaml parser not installed; skipping", { path: yamlPath });
           continue;

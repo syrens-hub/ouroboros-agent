@@ -6,6 +6,7 @@
  */
 
 import { getDb } from "../../core/db-manager.ts";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 import { Index, MetricKind, ScalarKind } from "usearch";
 
 export interface VectorEntry {
@@ -83,10 +84,10 @@ export class VectorStore {
     }>;
 
     if (rows.length > 0) {
-      const firstEmbedding = JSON.parse(rows[0].embedding) as number[];
+      const firstEmbedding = safeJsonParse<number[]>(rows[0].embedding, "vector embedding") ?? [];
       const index = this.ensureIndex(firstEmbedding.length);
       for (const row of rows) {
-        const embedding = JSON.parse(row.embedding) as number[];
+        const embedding = safeJsonParse<number[]>(row.embedding, "vector embedding") ?? [];
         const key = this.nextKey++;
         index.add(key, new Float32Array(embedding), 1);
         const entry: VectorEntry = {
@@ -94,7 +95,7 @@ export class VectorStore {
           sessionId: row.session_id,
           content: row.content,
           embedding,
-          metadata: JSON.parse(row.metadata || "{}"),
+          metadata: safeJsonParse<Record<string, unknown>>(row.metadata || "{}", "vector metadata") ?? {},
           createdAt: row.created_at,
         };
         this.idToKey.set(entry.id, key);
@@ -193,7 +194,7 @@ export class VectorStore {
     const results: SearchResult[] = [];
 
     for (const row of rows) {
-      const embedding = JSON.parse(row.embedding) as number[];
+      const embedding = safeJsonParse<number[]>(row.embedding, "vector embedding") ?? [];
       const score = cosineSimilarity(queryVec, normalize(embedding));
       results.push({
         entry: {
@@ -201,7 +202,7 @@ export class VectorStore {
           sessionId: row.session_id,
           content: row.content,
           embedding,
-          metadata: JSON.parse(row.metadata || "{}"),
+          metadata: safeJsonParse<Record<string, unknown>>(row.metadata || "{}", "vector metadata") ?? {},
           createdAt: row.created_at,
         },
         score,

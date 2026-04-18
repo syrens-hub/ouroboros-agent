@@ -7,6 +7,7 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import type { ToolPermissionLevel } from "../types/index.ts";
+import { safeJsonParse } from "./safe-utils.ts";
 
 export interface PermissionRule {
   source: "cli" | "project" | "session" | "settings";
@@ -55,8 +56,8 @@ export function loadProjectRules(projectRoot: string): PermissionRule[] {
   if (!existsSync(path)) return [];
   try {
     const raw = readFileSync(path, "utf-8");
-    const parsed = JSON.parse(raw) as { rules?: PermissionRule[] };
-    return Array.isArray(parsed.rules) ? parsed.rules : [];
+    const parsed = safeJsonParse<{ rules?: PermissionRule[] }>(raw, "load project rules");
+    return Array.isArray(parsed?.rules) ? parsed.rules : [];
   } catch {
     return [];
   }

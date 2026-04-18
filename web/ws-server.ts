@@ -12,6 +12,7 @@ import { notificationBus, type NotificationEvent } from "../skills/notification/
 import { getRedisPub, getRedisSub } from "../core/redis.ts";
 import { safeRun, resolveConfirm, confirmRequestHandlers } from "./runner-pool.ts";
 import type { ContentBlock } from "../types/index.ts";
+import { safeJsonParse } from "../core/safe-utils.ts";
 
 const API_TOKEN = appConfig.web.apiToken || "";
 
@@ -308,7 +309,8 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
 
     ws.on("message", async (raw) => {
       try {
-        const msg = JSON.parse(String(raw));
+        const msg = safeJsonParse<Record<string, any>>(String(raw), "ws message");
+        if (!msg) return;
         if (msg.type === "ping") {
           ws.send(JSON.stringify({ event: "pong" }));
           return;
@@ -349,7 +351,8 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
     });
     sub.on("message", (_channel, message) => {
       try {
-        const parsed = JSON.parse(message) as WSChannelMessage;
+        const parsed = safeJsonParse<WSChannelMessage>(message, "ws channel message");
+        if (!parsed) return;
         broadcastLocal(parsed.target, parsed.event, parsed.data);
       } catch {
         // ignore invalid messages

@@ -559,11 +559,16 @@ export function createBrowserTools(
             ];
 
             // 3) Call LLM with timeout
+            let visionTimeoutId: ReturnType<typeof setTimeout>;
+            const timeoutPromise = new Promise<never>((_, reject) => {
+              visionTimeoutId = setTimeout(
+                () => reject(new Error("LLM vision call timed out")),
+                BROWSER_VISION_TIMEOUT_MS
+              );
+            });
             const llmRes = await Promise.race([
-              callLLM(llmCfg, messages, []),
-              new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error("LLM vision call timed out")), BROWSER_VISION_TIMEOUT_MS)
-              ),
+              callLLM(llmCfg, messages, []).finally(() => clearTimeout(visionTimeoutId)),
+              timeoutPromise,
             ]);
 
             if (!llmRes.success) {

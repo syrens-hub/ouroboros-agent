@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { join } from "path";
 import { mkdirSync } from "fs";
 import { randomUUID } from "crypto";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 
 export interface ExperienceRecord {
   id: string;
@@ -92,14 +93,14 @@ export class ExperienceLearner {
     }>;
 
     const scored = rows.map((row) => {
-      const embedding = JSON.parse(row.embedding_json) as number[];
+      const embedding = safeJsonParse<number[]>(row.embedding_json, "experience embedding") ?? [];
       const score = cosineSimilarity(queryVec, embedding);
       return {
         record: {
           id: row.id,
           sessionId: row.session_id,
           taskType: row.task_type,
-          input: JSON.parse(row.input_json),
+          input: safeJsonParse(row.input_json, "experience input"),
           outcome: row.outcome,
           embedding,
           timestamp: row.created_at,

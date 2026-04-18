@@ -13,6 +13,7 @@
 import { getDb } from "../../core/db-manager.ts";
 import type { DbAdapter } from "../../core/db-adapter.ts";
 import { logger } from "../../core/logger.ts";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 
 export type ApprovalDecision = "auto" | "delayed" | "manual" | "denied";
 export type ApprovalStatus = "pending" | "approved" | "denied" | "expired";
@@ -92,11 +93,7 @@ function serializeFiles(files: string[]): string {
 }
 
 function parseFiles(raw: string): string[] {
-  try {
-    return JSON.parse(raw) as string[];
-  } catch {
-    return [];
-  }
+  return safeJsonParse<string[]>(raw, "approval files") ?? [];
 }
 
 export class HybridApprovalGenerator {

@@ -19,6 +19,7 @@ import { appConfig } from "../../core/config.ts";
 import { upsertSkillRegistry } from "../../core/session-db.ts";
 import { snapshotSkillVersion } from "../skill-versioning/index.ts";
 import { scanSkill } from "../skills-guard/index.ts";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 
 let _skillsCache: { data: Skill[]; expiresAt: number } | null = null;
 const SKILLS_CACHE_TTL_MS = 5_000;
@@ -43,12 +44,8 @@ type SkillDiskCache = {
 
 function readDiskCache(): SkillDiskCache | null {
   if (!existsSync(SKILL_CACHE_FILE)) return null;
-  try {
-    const raw = JSON.parse(readFileSync(SKILL_CACHE_FILE, "utf-8")) as SkillDiskCache;
-    return raw;
-  } catch {
-    return null;
-  }
+  const raw = safeJsonParse<SkillDiskCache>(readFileSync(SKILL_CACHE_FILE, "utf-8"), "skill disk cache");
+  return raw ?? null;
 }
 
 function writeDiskCache(cache: SkillDiskCache): void {

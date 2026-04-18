@@ -9,12 +9,15 @@ import { getDb } from "./db-manager.ts";
 
 export class ChannelRegistry {
   private plugins = new Map<string, ChannelPlugin>();
+  private tableEnsured = false;
 
   constructor() {
-    this.ensureTable();
+    // Lazy-init: do NOT call ensureTable here to avoid SQLite lock
+    // contention during parallel test imports in forked workers.
   }
 
   private ensureTable(): void {
+    if (this.tableEnsured) return;
     const db = getDb();
     db.exec(`
       CREATE TABLE IF NOT EXISTS session_channels (
@@ -23,6 +26,7 @@ export class ChannelRegistry {
         config_json TEXT DEFAULT '{}'
       );
     `);
+    this.tableEnsured = true;
   }
 
   register(plugin: ChannelPlugin): void {
@@ -38,6 +42,7 @@ export class ChannelRegistry {
   }
 
   getChannelForSession(sessionId: string): ChannelPlugin | undefined {
+    this.ensureTable();
     const db = getDb();
     const stmt = db.prepare("SELECT channel_id FROM session_channels WHERE session_id = ?");
     const row = stmt.get(sessionId) as { channel_id: string } | undefined;
@@ -46,6 +51,7 @@ export class ChannelRegistry {
   }
 
   bindSession(sessionId: string, channelId: string, config?: Record<string, unknown>): void {
+    this.ensureTable();
     const db = getDb();
     const stmt = db.prepare(`
       INSERT INTO session_channels (session_id, channel_id, config_json)
@@ -58,4 +64,11 @@ export class ChannelRegistry {
   }
 }
 
-export const channelRegistry = new ChannelRegistry();
+let _channelRegistry: ChannelRegistry | null = null;
+
+export function getChannelRegistry(): ChannelRegistry {
+  if (!_channelRegistry) {
+    _channelRegistry = new ChannelRegistry();
+  }
+  return _channelRegistry;
+}

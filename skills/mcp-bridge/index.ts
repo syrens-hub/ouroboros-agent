@@ -10,6 +10,7 @@ import { basename } from "path";
 import { z } from "zod";
 import { buildTool } from "../../core/tool-framework.ts";
 import type { MCPServerConfig, MCPTool, Tool, ToolCallContext } from "../../types/index.ts";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 
 const ALLOWED_MCP_COMMANDS = new Set(["npx", "node", "python3", "python", "uvx"]);
 
@@ -67,21 +68,17 @@ export class MCPClient {
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
-        try {
-          const msg = JSON.parse(trimmed) as JSONRPCResponse;
-          if (msg.id !== undefined) {
-            const pending = this.pending.get(msg.id);
-            if (pending) {
-              this.pending.delete(msg.id);
-              if (msg.error) {
-                pending.reject(new Error(`MCP error ${msg.error.code}: ${msg.error.message}`));
-              } else {
-                pending.resolve(msg.result);
-              }
+        const msg = safeJsonParse<JSONRPCResponse>(trimmed, "mcp rpc response");
+        if (msg && msg.id !== undefined) {
+          const pending = this.pending.get(msg.id);
+          if (pending) {
+            this.pending.delete(msg.id);
+            if (msg.error) {
+              pending.reject(new Error(`MCP error ${msg.error.code}: ${msg.error.message}`));
+            } else {
+              pending.resolve(msg.result);
             }
           }
-        } catch {
-          // ignore non-JSON lines (logs)
         }
       }
     });

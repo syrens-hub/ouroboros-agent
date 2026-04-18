@@ -5,6 +5,7 @@
  */
 
 import { getDb } from "../../core/db-manager.ts";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 import type { Claim, EvidenceSource } from "./types.ts";
 
 function rowToClaim(row: unknown): Claim {
@@ -18,8 +19,8 @@ function rowToClaim(row: unknown): Claim {
     confidence: Number(r.confidence),
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
-    sources: r.sources ? (JSON.parse(String(r.sources)) as EvidenceSource[]) : [],
-    contradictions: r.contradictions ? (JSON.parse(String(r.contradictions)) as string[]) : [],
+    sources: r.sources ? (safeJsonParse<EvidenceSource[]>(String(r.sources), "claim sources") ?? []) : [],
+    contradictions: r.contradictions ? (safeJsonParse<string[]>(String(r.contradictions), "claim contradictions") ?? []) : [],
   };
 }
 

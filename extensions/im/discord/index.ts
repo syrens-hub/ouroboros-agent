@@ -13,6 +13,7 @@ import type {
   ChannelMember,
 } from "../../../types/index.ts";
 import { ok, err, type Result } from "../../../types/index.ts";
+import { safeJsonParse } from "../../../core/safe-utils.ts";
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 const DISCORD_GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json";
@@ -83,12 +84,13 @@ class DiscordAdapter implements ChannelInboundAdapter, ChannelOutboundAdapter {
     });
 
     this.ws.on("message", (data: WebSocket.Data) => {
-      const payload = JSON.parse(data.toString()) as {
+      const payload = safeJsonParse<{
         op: number;
         d?: unknown;
         s?: number | null;
         t?: string | null;
-      };
+      }>(data.toString(), "discord gateway message");
+      if (!payload) return;
 
       if (payload.s !== undefined && payload.s !== null) {
         this.lastSequence = payload.s;

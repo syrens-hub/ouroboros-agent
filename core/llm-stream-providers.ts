@@ -7,10 +7,11 @@ import type {
   BaseMessage,
   Tool,
 } from "../types/index.ts";
-import type { LLMConfig, LLMStreamChunk } from "./llm-router.ts";
-import { formatOpenAIMessageContent, formatAnthropicContent, formatGeminiParts } from "./llm-router.ts";
+import type { LLMConfig, LLMStreamChunk } from "./llm-types.ts";
+import { formatOpenAIMessageContent, formatAnthropicContent, formatGeminiParts } from "./llm-stream-helpers.ts";
 import { combineAbortSignals, extractZodSchema, timeoutSignal } from "./llm-stream-helpers.ts";
 import { LLM_TIMEOUT_MS } from "../web/routes/constants.ts";
+import { safeJsonParse } from "./safe-utils.ts";
 
 // =============================================================================
 // OpenAI-compatible streaming
@@ -105,7 +106,8 @@ export async function* streamOpenAI(
         const data = trimmed.slice(6);
         if (data === "[DONE]") continue;
         try {
-          const json = JSON.parse(data);
+          const json = safeJsonParse<Record<string, any>>(data, "OpenAI SSE");
+          if (!json) continue;
           if (json.usage) {
             const u = json.usage;
             yield {
@@ -139,11 +141,7 @@ export async function* streamOpenAI(
               }
               pendingToolCalls.set(id, existing);
               let parsedInput: Record<string, unknown> = {};
-              try {
-                if (existing.input) parsedInput = JSON.parse(existing.input);
-              } catch {
-                // leave as empty object until fully parsed
-              }
+              if (existing.input) parsedInput = safeJsonParse<Record<string, unknown>>(existing.input, "tool call input") ?? {};
               yield {
                 type: "tool_use",
                 toolUse: { ...existing, input: parsedInput },
@@ -231,7 +229,8 @@ export async function* streamAnthropic(
         if (!trimmed.startsWith("data: ")) continue;
         const data = trimmed.slice(6);
         try {
-          const json = JSON.parse(data);
+          const json = safeJsonParse<Record<string, any>>(data, "Anthropic SSE");
+          if (!json) continue;
           if (json.type === "message_start" && json.message?.usage) {
             const u = json.message.usage;
             yield {
@@ -386,7 +385,8 @@ export async function* streamGemini(
         const data = trimmed.slice(6);
         if (data === "[DONE]") continue;
         try {
-          const json = JSON.parse(data);
+          const json = safeJsonParse<Record<string, any>>(data, "Gemini SSE");
+          if (!json) continue;
           if (json.usageMetadata) {
             const u = json.usageMetadata;
             yield {

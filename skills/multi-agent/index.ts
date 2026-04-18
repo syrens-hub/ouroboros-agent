@@ -9,6 +9,7 @@ import { z } from "zod";
 import { buildTool } from "../../core/tool-framework.ts";
 import type { AgentRole, SubTask, TaskResult, BaseMessage } from "../../types/index.ts";
 import { createAgentLoopRunner, type LLMCaller } from "../agent-loop/index.ts";
+import { safeJsonParse } from "../../core/safe-utils.ts";
 
 export interface AgentPoolEntry {
   role: AgentRole;
@@ -54,17 +55,16 @@ export function createPlannerDispatcher(llmCaller: LLMCaller): TaskDispatcher {
       ];
       const reply = await llmCaller.call(messages, []);
       const text = typeof reply.content === "string" ? reply.content : JSON.stringify(reply.content);
-      try {
-        const parsed = JSON.parse(text) as { role: string; prompt: string }[];
+      const parsed = safeJsonParse<{ role: string; prompt: string }[]>(text, "planner dispatch");
+      if (parsed) {
         return parsed.map((p, idx) => ({
           taskId: `subtask_${idx}`,
           role: p.role,
           prompt: p.prompt,
         }));
-      } catch {
-        // Fallback: single executor task
-        return [{ taskId: "subtask_0", role: "executor", prompt: task }];
       }
+      // Fallback: single executor task
+      return [{ taskId: "subtask_0", role: "executor", prompt: task }];
     },
   };
 }
