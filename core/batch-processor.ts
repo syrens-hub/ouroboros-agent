@@ -218,7 +218,9 @@ export class BatchProcessor<T, R> {
         this.activeCount < this.maxConcurrency
       ) {
         const next = this.waitingBatches.shift()!;
-        void this.runBatch(next);
+        this.runBatch(next).catch((e) => {
+          console.error(`Batch execution failed: ${e}`);
+        });
       }
     }
   }

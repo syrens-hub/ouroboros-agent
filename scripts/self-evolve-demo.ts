@@ -2,11 +2,16 @@
 /**
  * Priority A: Agent Loop Self-Evolution Demo
  * ===========================================
+ * ⚠️  WARNING: DEMO ONLY - DO NOT USE IN PRODUCTION ⚠️
+ * 
  * This script demonstrates the ultimate proof of Ouroboros:
  * the Agent Loop — itself a Skill — reading its own source,
  * deciding on an improvement, and replacing itself via self_modify.
  *
  * All mutations pass through the immutable Rule Engine.
+ * 
+ * SECURITY NOTE: This script auto-approves medium-risk modifications.
+ * Remove or restrict this in production deployments.
  */
 
 import { readFileSync } from "fs";

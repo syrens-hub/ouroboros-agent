@@ -5,6 +5,8 @@
  */
 
 import { getDb } from "../db-manager.ts";
+import { safeFailOpen } from "../safe-utils.ts";
+import { lastId, rowAs, rowCount, rowsAs } from "../db-utils.ts";
 
 export function insertTokenUsage(sessionId: string, estimatedTokens: number): { success: true; id: number } | { success: false; error: string } {
   try {
@@ -12,37 +14,33 @@ export function insertTokenUsage(sessionId: string, estimatedTokens: number): { 
     const result = db.prepare(
       `INSERT INTO token_usage (session_id, estimated_tokens) VALUES (?, ?)`
     ).run(sessionId, estimatedTokens);
-    return { success: true, id: Number((result as { lastInsertRowid: number | bigint }).lastInsertRowid) };
+    return { success: true, id: lastId(result) };
   } catch (e) {
     return { success: false, error: String(e) };
   }
 }
 
 export function getSessionTokenUsage(sessionId: string): number {
-  try {
+  return safeFailOpen(() => {
     const db = getDb();
-    const row = db.prepare(
+    const row = rowAs<{ total: number }>(db.prepare(
       `SELECT COALESCE(SUM(estimated_tokens), 0) as total FROM token_usage WHERE session_id = ?`
-    ).get(sessionId) as { total: number };
+    ).get(sessionId));
     return row?.total ?? 0;
-  } catch {
-    return 0;
-  }
+  }, "getSessionTokenUsage DB error", 0);
 }
 
 export function getGlobalTokenUsage(sinceMs?: number): number {
-  try {
+  return safeFailOpen(() => {
     const db = getDb();
     const sql = sinceMs
       ? `SELECT COALESCE(SUM(estimated_tokens), 0) as total FROM token_usage WHERE created_at >= ?`
       : `SELECT COALESCE(SUM(estimated_tokens), 0) as total FROM token_usage`;
     const row = sinceMs
-      ? (db.prepare(sql).get(sinceMs) as { total: number })
-      : (db.prepare(sql).get() as { total: number });
+      ? rowAs<{ total: number }>(db.prepare(sql).get(sinceMs))
+      : rowAs<{ total: number }>(db.prepare(sql).get());
     return row?.total ?? 0;
-  } catch {
-    return 0;
-  }
+  }, "getGlobalTokenUsage DB error", 0);
 }
 
 export interface TokenUsagePoint {
@@ -79,7 +77,7 @@ export function getTokenUsageTimeSeries(
     }
     sql += ` GROUP BY time_bucket ORDER BY time_bucket ASC`;
 
-    const rows = db.prepare(sql).all(...params) as { time_bucket: string; tokens: number }[];
+    const rows = rowsAs<{ time_bucket: string; tokens: number }>(db.prepare(sql).all(...params));
     return {
       success: true,
       data: rows.map((r) => ({ time: r.time_bucket, tokens: r.tokens })),
@@ -93,7 +91,7 @@ export function pruneTokenUsage(beforeMs: number): { success: true; deleted: num
   try {
     const db = getDb();
     const result = db.prepare("DELETE FROM token_usage WHERE created_at < ?").run(beforeMs);
-    return { success: true, deleted: (result as { changes: number }).changes };
+    return { success: true, deleted: rowCount(result) };
   } catch (e) {
     return { success: false, error: String(e) };
   }

@@ -5,6 +5,7 @@ import {
   sanitizeMessageForLLM,
   maskApiKey,
   type LLMConfig,
+  type LLMStreamChunk,
 } from "../../core/llm-router.ts";
 import { z } from "zod";
 import { buildTool } from "../../core/tool-framework.ts";
@@ -83,7 +84,7 @@ describe("LLM Router", () => {
       const cfg: LLMConfig = { provider: "openai", model: "gpt-4o", apiKey: "sk-test" };
       const res = await streamLLM(cfg, [{ role: "user", content: "hello" }], []);
       if (!res.success) throw new Error("streamLLM failed");
-      const chunks: { type: "text" | "tool_use" | "usage"; text?: string; toolUse?: Record<string, unknown>; usage?: { totalTokens?: number; inputTokens?: number; outputTokens?: number } }[] = [];
+      const chunks: LLMStreamChunk[] = [];
       for await (const c of res.data) chunks.push(c);
       expect(chunks.some((c) => (c as { type: string; text?: string }).type === "text" && (c as { type: string; text?: string }).text === "hi")).toBe(true);
     });
@@ -98,6 +99,8 @@ describe("LLM Router", () => {
       const cfg: LLMConfig = { provider: "openai", model: "gpt-4o", apiKey: "sk-test" };
       const res = await streamLLM(cfg, [{ role: "user", content: "hello" }], []);
       if (!res.success) throw new Error("streamLLM failed");
+      const first = await res.data.next();
+      expect(first.value).toEqual({ type: "response_headers", headers: {} });
       await expect(res.data.next()).rejects.toThrow();
     });
   });

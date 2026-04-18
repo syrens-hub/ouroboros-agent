@@ -1,17 +1,74 @@
-# Ouroboros Agent
+# Ouroboros（衔尾蛇）Agent 极简技术总结
 
-> A self-modifying agent system.
-> **Skeleton**: Claude Code's tool/permission architecture.
-> **Blood**: Hermes' autonomous learning & background review.
-> **Nerves**: OpenClaw's type discipline & IM integration boundaries.
+> **一句话定位**：一个能自己改自己代码、自己提交 Git、自己持续进化的开源 AI 系统，目标是做「有持久身份的连续数字实体」，不是一次性脚本。
 
-## Core Philosophy
+---
 
-The only immutable component in the system is the **Rule Engine** (`core/rule-engine.ts`).
+## 一、核心解决什么痛点？
 
-> *"The system is allowed to modify itself, but every modification must pass through the Rule Engine's boundary checks."*
+传统 Agent 三大问题：
 
-Everything else — including the **Agent Loop itself** — is a **Skill** that can be learned, patched, and replaced.
+- **重启就失忆**，没有 "连续身份"
+- **只会被动执行**，没主动性
+- **改代码必须靠人**，进化成本高
+
+Ouroboros 用这套机制破局：
+
+- **持久身份**：identity、宪法、记忆跨重启保存
+- **LLM-First**：LLM 做决策，代码只负责执行
+- **自进化闭环**：读代码 → 多模型审查 → Git 提交 → 重启生效
+- **后台意识**：没事也在轻量思考、观察环境
+
+---
+
+## 二、最关键功能
+
+1. **宪法驱动（BIBLE.md）**
+   9 条原则，硬约束：不能删核心身份、不能支付、不能违法，运行时真会遵守。
+
+2. **后台意识循环**
+   低开销模型，无任务时自动总结、规划、更知识库。
+
+3. **任务系统**
+   任务分解 + 单消费者路由，避免重复执行浪费预算。
+
+4. **工具栈（≈40 个）**
+   代码读写、浏览器自动化、GitHub、多模型审查、视觉分析等。
+
+5. **预算守护**
+   实时算 OpenRouter 开销，超预算自动停进化。
+
+---
+
+## 三、极简架构（两层）
+
+- **监督层（supervisor）**
+  进程管理、任务队列、Git、持久化（Google Drive）、多进程 Worker。
+
+- **代理核心（ouroboros）**
+  - `loop`：并发工具 + 提示缓存
+  - `context`：上下文构建压缩
+  - `consciousness`：后台意识
+  - `tools`：插件式注册，易扩展
+
+---
+
+## 四、怎么跑
+
+- **最简单**：Google Colab + Fork 仓库 + 填密钥 → 跑启动脚本
+- **本地**：Linux/macOS/WSL，配环境变量，挂载 Google Drive 或改路径
+
+---
+
+## 五、适合谁
+
+- **初学者**：学现代 Agent 架构的 "活教材"
+- **开发者**：研究自修改、多模型协同、可信 Agent
+- **产品**：验证自主助手原型，但要严控风险
+
+---
+
+> **Immutable floor**: `core/rule-engine.ts`. Everything else — including the **Agent Loop itself** — is a **Skill** that can be learned, patched, and replaced.
 
 ---
 
@@ -55,33 +112,42 @@ npx tsx scripts/test-llm.ts
 ## Architecture
 
 ```
-core/
-  rule-engine.ts        # The immutable floor
+core/                   # Immutable kernel (3 sacred files)
+  rule-engine.ts        # The only unmodifiable floor
   tool-framework.ts     # Fail-closed Tool builder + StreamingToolExecutor
   permission-gate.ts    # 3-layer permission pipeline
-  sandbox.ts            # Subagent context isolation
-  llm-router.ts         # Unified OpenAI / Anthropic / MiniMax / Qwen / Gemini / Local streaming
-  llm-resilience.ts     # Retry, fallback, and circuit breaker layer
   db-manager.ts         # Connection singleton + migrations (SQLite & PostgreSQL)
   db-adapter.ts         # DbAdapter interface for pluggable backends
   db-pg.ts              # PostgreSQL adapter (runtime switchable)
-  redis.ts              # Shared Redis client + Pub/Sub helpers
-  self-healing.ts       # Auto-diagnosis, snapshots, rollback, repair strategies (OpenClaw)
-  task-scheduler.ts     # Cron, interval, delayed, and one-time tasks with retries
-  i18n.ts               # Backend i18n with 13 locales and Intl formatting
+  config.ts             # Central configuration
+  logger.ts             # Structured logging
   session-db.ts         # Barrel re-export for backward compatibility
-  repositories/         # Repository modules (session, message, trajectory, skill, modification)
+  index.ts              # Core barrel exports
 
-skills/
-  agent-loop/index.ts   # The Agent Loop (itself a replaceable Skill)
-  learning/index.ts     # Trajectory compression + skill filesystem ops
-  learning/review-agent.ts  # Background review agent (Hermes pattern)
-  self-modify/index.ts  # Gateway for all self-mutations
-  personality/index.ts  # 10-dim trait evolution + 8-dim values + anchor memory
-  dreaming/index.ts     # Light / deep / REM memory consolidation pipeline
-  multimedia/index.ts   # Image / video / music generation (MiniMax)
-  file-tools.ts         # Basic read_file / write_file tools
-  greet-tool/           # Example skill with executable code attachment
+skills/                 # Everything is a Skill — including the Agent Loop
+  agent-loop/           # Main agent loop (replaceable)
+  autonomous-evolution/ # Background daemon that auto-creates skills
+  backup/               # Database backup & restore
+  browser/              # Playwright-based browser automation + Computer Use
+  budget-guard/         # Real-time budget tracking and automatic circuit-breaking
+  checkpoint/           # Shadow-git filesystem snapshots
+  hot-reload/           # File watcher for skill auto-reload
+  i18n/                 # 13-locale internationalization
+  knowledge-base/       # RAG: ingest + embedding + vector search
+  learning/             # Trajectory compression + skill filesystem ops
+  mcp/                  # MCP connection manager + output storage + utils
+  notification/         # Global notification bus (EventEmitter)
+  sandbox/              # Subagent context isolation
+  self-healing/         # Anomaly detection, snapshots, rollback, repair
+  rate-limiter/         # Token-bucket rate limiting (API + per-user)
+  self-modify/          # Gateway for all self-mutations
+  session-archiver/     # Session archiving & cleanup
+  skill-versioning/     # Skill snapshot, restore, and version history
+  skills-guard/         # Runtime validation of skill safety constraints
+  smart-cache/          # LRU cache with TTL and size eviction
+  task-scheduler/       # Cron / interval / delayed tasks with retries
+  telemetry/            # OpenTelemetry spans, metrics, OTLP exporter
+  webhooks/             # Webhook registration & delivery
 
 extensions/
   im/mock-chat/index.ts # Mock IM channel implementing ChannelPlugin
@@ -90,7 +156,7 @@ extensions/
   im/discord/index.ts   # Discord Gateway WebSocket adapter
 
 types/index.ts          # Strict Zod + TypeScript boundaries
-web/                    # Vite + React 18 SPA with WebSocket real-time chat
+web/                    # Vite + React 18 SPA with WebSocket real-time chat + HTTP API
 k8s/                    # Kubernetes manifests + HPA
 ```
 

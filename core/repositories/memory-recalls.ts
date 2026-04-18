@@ -1,5 +1,5 @@
 import { getDb } from "../db-manager.ts";
-import { timedQuery } from "../telemetry.ts";
+import { timedQuery } from "../../skills/telemetry/index.ts";
 import type { Result } from "../../types/index.ts";
 import { ok, err } from "../../types/index.ts";
 

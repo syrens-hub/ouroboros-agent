@@ -11,12 +11,15 @@ import { existsSync, statSync, readdirSync, rmdirSync, unlinkSync } from "fs";
 import { join } from "path";
 import { appConfig } from "../core/config.ts";
 import { logger } from "../core/logger.ts";
-import { notificationBus } from "../core/notification-bus.ts";
-import { maybeAutoBackup } from "../core/backup.ts";
-import { closeRedis } from "../core/redis.ts";
+import { notificationBus } from "../skills/notification/index.ts";
+import { maybeAutoBackup } from "../skills/backup/index.ts";
+import {
+  SERVER_TIMEOUT_MS,
+  SERVER_KEEP_ALIVE_TIMEOUT_MS,
+  SERVER_HEADERS_TIMEOUT_MS,
+} from "./routes/constants.ts";
 import {
   startRunnerIdleCleanup,
-  stopRunnerIdleCleanup,
   reconcileSkillRegistry,
   getOrCreateRunner,
   globalPool,
@@ -24,13 +27,21 @@ import {
 } from "./runner-pool.ts";
 import { startWorkerIdleCleanup, resumeQueuedWorkerTasks } from "../skills/orchestrator/index.ts";
 import { feishuPlugin, FEISHU_API_BASE, getTenantAccessToken } from "../extensions/im/feishu/index.ts";
-import { attachWebSocket, closeWebSocket } from "./ws-server.ts";
+import { attachWebSocket } from "./ws-server.ts";
 import { captureException } from "../core/sentry.ts";
+import { initOtel } from "../skills/telemetry/otel.ts";
 import { consolidateMemoryLayers } from "../core/memory-consolidation.ts";
 import type { ContentBlock } from "../types/index.ts";
 import { pruneDeletedSessions } from "../core/session-db.ts";
+import { dbInitPromise } from "../core/db-manager.ts";
 import { pruneTokenUsage } from "../core/repositories/token-usage.ts";
 import { handleApi } from "./routes/api.ts";
+import { gracefulShutdown } from "./shutdown.ts";
+import { executionDaemon } from "../skills/evolution-executor/index.ts";
+import { registerFeedbackLoop } from "../skills/evolution-feedback/index.ts";
+import { registerEvolutionObservability } from "../skills/evolution-observability/index.ts";
+import { autonomousEvolutionLoop } from "../skills/autonomous-evolution/index.ts";
+import { runMetaEvolutionAnalysis } from "../skills/meta-evolution/index.ts";
 import {
   readBody,
   json,
@@ -49,9 +60,10 @@ import {
 
 const PORT = appConfig.web.port;
 const WEB_DIST = join(process.cwd(), "web", "dist");
-const SERVER_TIMEOUT_MS = 120_000;
-const SERVER_KEEP_ALIVE_TIMEOUT_MS = 30_000;
-const SERVER_HEADERS_TIMEOUT_MS = 60_000;
+
+
+// Initialize OpenTelemetry early
+initOtel();
 
 // =============================================================================
 // Main Server
@@ -134,26 +146,6 @@ export function createApp(): Server {
   server.headersTimeout = SERVER_HEADERS_TIMEOUT_MS;
   attachWebSocket(server);
   return server;
-}
-
-export function gracefulShutdown(signal = "MANUAL", exitCode = 0): void {
-  logger.info(`Shutting down gracefully...`, { signal });
-  stopRunnerIdleCleanup();
-  closeWebSocket().then(() => closeRedis()).then(() => {
-    if (activeServer) {
-      activeServer.close(() => {
-        logger.info("Server closed");
-        process.exit(exitCode);
-      });
-    } else {
-      process.exit(exitCode);
-    }
-  });
-  // Force exit after 10s
-  setTimeout(() => {
-    logger.error("Forced shutdown after timeout");
-    process.exit(1);
-  }, 10000);
 }
 
 export function cleanupOldUploads(maxAgeDays = 30): { deleted: number; dirsRemoved: number } {
@@ -388,6 +380,26 @@ if (isEntrypoint) {
       }
     });
 
+    if (dbInitPromise) {
+      await dbInitPromise;
+    }
+
+    // Start evolution auto-execution daemon and feedback loop (v7.1)
+    executionDaemon.start();
+    registerFeedbackLoop(undefined, { autoRollback: true, autoRepropose: false });
+    registerEvolutionObservability();
+
+    // Start autonomous evolution loop (v9.0)
+    autonomousEvolutionLoop.start();
+
+    // Register meta-evolution analysis cron (v9.1)
+    taskScheduler.registerCronTask(
+      async () => {
+        runMetaEvolutionAnalysis();
+      },
+      { id: "meta-evolution", name: "Meta-Evolution Analysis", cron: "0 1 * * *", enabled: true }
+    );
+
     const server = createApp();
     server.listen(PORT, () => {
       logger.info(`Ouroboros Web server running at http://localhost:${PORT}`, { dist: WEB_DIST });
@@ -395,11 +407,15 @@ if (isEntrypoint) {
 
     process.on("SIGTERM", () => {
       taskScheduler.destroy();
-      gracefulShutdown("SIGTERM", 0);
+      executionDaemon.stop();
+      autonomousEvolutionLoop.stop();
+      gracefulShutdown(activeServer, "SIGTERM", 0);
     });
     process.on("SIGINT", () => {
       taskScheduler.destroy();
-      gracefulShutdown("SIGINT", 0);
+      executionDaemon.stop();
+      autonomousEvolutionLoop.stop();
+      gracefulShutdown(activeServer, "SIGINT", 0);
     });
   })();
 }

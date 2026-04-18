@@ -8,6 +8,8 @@ import {
   setRunnerPoolLimits,
   getRunnerPoolStats,
   resetRunnerPool,
+  getSessionToolCount,
+  reloadSkillTools,
 } from "../../web/runner-pool.ts";
 
 describe("Runner Pool", () => {
@@ -106,5 +108,32 @@ describe("Runner Pool", () => {
     // b was evicted
     const stats = getRunnerPoolStats();
     expect(stats.size).toBe(3);
+  });
+
+  it("each runner gets its own isolated tool pool", () => {
+    getOrCreateRunner("iso1");
+    getOrCreateRunner("iso2");
+    expect(getSessionToolCount("iso1")).toBeGreaterThan(0);
+    expect(getSessionToolCount("iso2")).toBeGreaterThan(0);
+    expect(getSessionToolCount("iso1")).toBe(getSessionToolCount("iso2"));
+  });
+
+  it("reloadSkillTools propagates to all active session pools", () => {
+    getOrCreateRunner("active1");
+    getOrCreateRunner("active2");
+    const before1 = getSessionToolCount("active1");
+    const before2 = getSessionToolCount("active2");
+
+    const dummyTool = {
+      name: "__dummy_isolation_test_tool__",
+      description: "test",
+      parameters: { type: "object", properties: {} },
+      execute: async () => ({ success: true }),
+    } as unknown as import("../../types/index.ts").Tool<unknown, unknown, unknown>;
+
+    reloadSkillTools([dummyTool]);
+
+    expect(getSessionToolCount("active1")).toBe(before1 + 1);
+    expect(getSessionToolCount("active2")).toBe(before2 + 1);
   });
 });

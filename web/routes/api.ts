@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { checkRateLimit } from "../../core/rate-limiter.ts";
+import { checkRateLimit } from "../../skills/rate-limiter/index.ts";
 import {
   ALLOWED_ORIGINS,
   json,
@@ -12,6 +12,7 @@ import {
   ReqContext,
 } from "./shared.ts";
 
+import { RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_MS } from "./constants.ts";
 import { handleSystem } from "./handlers/system.ts";
 import { handleSessions } from "./handlers/sessions.ts";
 import { handleSkills } from "./handlers/skills.ts";
@@ -27,7 +28,20 @@ import { handleContext } from "./handlers/context.ts";
 import { handleKB } from "./handlers/kb.ts";
 import { handleGallery } from "./handlers/gallery.ts";
 import { handleExport } from "./handlers/export.ts";
+import { handleUpload } from "./handlers/upload.ts";
+import { handleBrowser } from "./handlers/browser.ts";
+import { handleCanvas } from "./handlers/canvas.ts";
+import { handleChannels } from "./handlers/channels.ts";
+import { handleDreaming } from "./handlers/dreaming.ts";
+import { handleCrewAI } from "./handlers/crewai.ts";
+import { handleLearning } from "./handlers/learning.ts";
+import { handleSecurity } from "./handlers/security.ts";
+import { handleSOP } from "./handlers/sop.ts";
+import { handleWebhooks } from "./handlers/webhooks.ts";
 import { handleMisc } from "./handlers/misc.ts";
+import { handleOpenApi } from "./handlers/openapi.ts";
+import { handleEvolution } from "./handlers/evolution.ts";
+import { handleMonitoring } from "./handlers/monitoring.ts";
 
 export async function handleApi(req: IncomingMessage, res: ServerResponse, path: string, ctx: ReqContext) {
   const method = req.method || "GET";
@@ -41,8 +55,9 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse, path:
     return;
   }
 
-  // CORS block for actual requests
-  if (ALLOWED_ORIGINS.length > 0 && !isAllowedOrigin(origin)) {
+  // CORS block for actual requests (skip health/readiness/metrics probes)
+  const isProbePath = path === "/api/health" || path === "/api/ready" || path === "/api/metrics";
+  if (!isProbePath && ALLOWED_ORIGINS.length > 0 && !isAllowedOrigin(origin)) {
     json(res, 403, { success: false, error: { message: "CORS origin not allowed" } }, ctx);
     return;
   }
@@ -51,7 +66,7 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse, path:
   const clientIp = getClientIp(req);
   const isLocalhost = clientIp === "127.0.0.1" || clientIp === "::1" || clientIp === "::ffff:127.0.0.1";
   if (!isLocalhost) {
-    const rate = await checkRateLimit(`api:${clientIp}`, 60, 60_000);
+    const rate = await checkRateLimit(`api:${clientIp}`, RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_MS);
     res.setHeader("X-RateLimit-Limit", String(60));
     res.setHeader("X-RateLimit-Remaining", String(rate.remaining));
     if (!rate.allowed) {
@@ -82,6 +97,19 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse, path:
   if (await handleKB(req, res, method, path, ctx)) return;
   if (await handleGallery(req, res, method, path, ctx)) return;
   if (await handleExport(req, res, method, path, ctx)) return;
+  if (await handleUpload(req, res, method, path, ctx)) return;
+  if (await handleBrowser(req, res, method, path, ctx)) return;
+  if (await handleCanvas(req, res, method, path, ctx)) return;
+  if (await handleChannels(req, res, method, path, ctx)) return;
+  if (await handleDreaming(req, res, method, path, ctx)) return;
+  if (await handleCrewAI(req, res, method, path, ctx)) return;
+  if (await handleLearning(req, res, method, path, ctx)) return;
+  if (await handleSecurity(req, res, method, path, ctx)) return;
+  if (await handleSOP(req, res, method, path, ctx)) return;
+  if (await handleWebhooks(req, res, method, path, ctx)) return;
+  if (await handleOpenApi(req, res, method, path, ctx)) return;
+  if (await handleEvolution(req, res, method, path, ctx)) return;
+  if (await handleMonitoring(req, res, method, path, ctx)) return;
   if (await handleMisc(req, res, method, path, ctx)) return;
 
   notFound(res, ctx);

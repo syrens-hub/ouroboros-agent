@@ -111,9 +111,9 @@ describe("Skill Factory", () => {
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.code).toBe("LOAD_ERROR");
+      expect(result.error.code).toBe("QUALITY_ERROR");
     }
-    // Cleanup should have removed the directory
+    // Directory should not exist (cleanup or never written)
     expect(existsSync(TEST_SKILL_DIR)).toBe(false);
   });
 

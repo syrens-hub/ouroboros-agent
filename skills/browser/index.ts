@@ -8,6 +8,7 @@ import type { KnowledgeBase } from "../knowledge-base/index.ts";
 import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "fs";
 import { join, basename } from "path";
 import { homedir } from "os";
+import { BROWSER_VISION_TIMEOUT_MS } from "../../web/routes/constants.ts";
 
 export interface BrowserConfig {
   headless?: boolean;
@@ -561,7 +562,7 @@ export function createBrowserTools(
             const llmRes = await Promise.race([
               callLLM(llmCfg, messages, []),
               new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error("LLM vision call timed out")), 30_000)
+                setTimeout(() => reject(new Error("LLM vision call timed out")), BROWSER_VISION_TIMEOUT_MS)
               ),
             ]);
 

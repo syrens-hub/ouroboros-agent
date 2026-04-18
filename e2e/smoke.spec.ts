@@ -80,4 +80,18 @@ test.describe("Ouroboros Web UI Smoke Tests", () => {
     await expect(page.locator("text=LLM 连接").first()).toBeVisible({ timeout: 5000 });
     await expect(page.locator("text=SessionDB").first()).toBeVisible();
   });
+
+  test("System page shows circuit breaker panel", async ({ page }) => {
+    await page.goto("/");
+    await page.locator("button:has-text('系统')").first().click();
+    await expect(page.locator("text=LLM 熔断器状态").first()).toBeVisible();
+  });
+
+  test("System page shows task queue stats", async ({ page }) => {
+    await page.goto("/");
+    await page.locator("button:has-text('系统')").first().click();
+    await expect(page.locator("text=待处理").first()).toBeVisible();
+    await expect(page.locator("text=延迟中").first()).toBeVisible();
+    await expect(page.locator("text=失败").first()).toBeVisible();
+  });
 });

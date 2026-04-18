@@ -19,7 +19,7 @@ const mockWechatworkStart = vi.fn();
 const mockWechatworkStop = vi.fn();
 
 vi.mock("../../../web/routes/shared.ts", () => ({
-  json: (...args: any[]) => mockJson(...args),
+  json: (...args: unknown[]) => mockJson(...args),
   ReqContext: {},
 }));
 

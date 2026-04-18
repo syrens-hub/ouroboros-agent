@@ -5,7 +5,7 @@
  */
 
 import { createHash } from "crypto";
-import { readFileSync } from "fs";
+import { readFile } from "fs/promises";
 
 export interface DocumentChunk {
   id: string;
@@ -38,8 +38,8 @@ function generateId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-export function extractText(filePath: string): string {
-  const content = readFileSync(filePath, "utf-8");
+export async function extractText(filePath: string): Promise<string> {
+  const content = await readFile(filePath, "utf-8");
   if (filePath.endsWith(".json")) {
     try {
       return JSON.stringify(JSON.parse(content), null, 2);

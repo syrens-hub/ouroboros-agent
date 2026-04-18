@@ -14,26 +14,26 @@ const mockGlobalPoolAll = vi.fn();
 const mockGlobalPoolReload = vi.fn();
 const mockGlobalPoolRegister = vi.fn();
 
-let mockLlmCfg: any = undefined;
+let mockLlmCfg: Record<string, unknown> | undefined = undefined;
 
 vi.mock("../../../web/routes/shared.ts", () => ({
-  json: (...args: any[]) => mockJson(...args),
-  readBody: (...args: any[]) => mockReadBody(...args),
-  parseBody: (...args: any[]) => mockParseBody(...args),
-  getCached: (...args: any[]) => mockGetCached(...args),
+  json: (...args: unknown[]) => mockJson(...args),
+  readBody: (...args: unknown[]) => mockReadBody(...args),
+  parseBody: (...args: unknown[]) => mockParseBody(...args),
+  getCached: (...args: unknown[]) => mockGetCached(...args),
   InstallSkillBodySchema: {},
   ReqContext: {},
 }));
 
 vi.mock("../../../web/runner-pool.ts", () => ({
-  discoverSkills: (...args: any[]) => mockDiscoverSkills(...args),
-  installSkillTool: { call: (...args: any[]) => mockInstallSkillToolCall(...args) },
+  discoverSkills: (...args: unknown[]) => mockDiscoverSkills(...args),
+  installSkillTool: { call: (...args: unknown[]) => mockInstallSkillToolCall(...args) },
   get llmCfg() { return mockLlmCfg; },
   get globalPool() {
     return {
-      all: (...args: any[]) => mockGlobalPoolAll(...args),
-      reload: (...args: any[]) => mockGlobalPoolReload(...args),
-      register: (...args: any[]) => mockGlobalPoolRegister(...args),
+      all: (...args: unknown[]) => mockGlobalPoolAll(...args),
+      reload: (...args: unknown[]) => mockGlobalPoolReload(...args),
+      register: (...args: unknown[]) => mockGlobalPoolRegister(...args),
     };
   },
 }));
@@ -53,7 +53,7 @@ function ctx() {
 beforeEach(() => {
   vi.clearAllMocks();
   mockLlmCfg = undefined;
-  mockGetCached.mockImplementation((_key: string, _ttl: number, factory: () => any) => factory());
+  mockGetCached.mockImplementation((_key: string, _ttl: number, factory: () => unknown) => factory());
 });
 
 describe("handleSkills", () => {
@@ -125,14 +125,14 @@ describe("handleSkills", () => {
     mockReadBody.mockResolvedValue(JSON.stringify({ skill_name: "test", description: "desc" }));
     mockParseBody.mockReturnValue({ success: true, data: { skill_name: "test", description: "desc", force: false } });
     mockGlobalPoolAll.mockReturnValue([]);
-    vi.mocked(generateSkillPackage).mockResolvedValue({ success: true, data: { package: "pkg" } });
+    vi.mocked(generateSkillPackage).mockResolvedValue({ success: true, data: { skillName: "test", skillDir: "/tmp/skills/test", toolsLoaded: [] } });
     const res = createMockRes();
     const result = await handleSkills(createMockReq(), res, "POST", "/api/skills/generate", ctx());
     expect(result).toBe(true);
     expect(mockJson).toHaveBeenCalledWith(
       res,
       200,
-      { success: true, data: { package: "pkg" } },
+      { success: true, data: { skillName: "test", skillDir: "/tmp/skills/test", toolsLoaded: [] } },
       expect.any(Object)
     );
     expect(generateSkillPackage).toHaveBeenCalledWith(
@@ -156,7 +156,7 @@ describe("handleSkills", () => {
     mockReadBody.mockResolvedValue(JSON.stringify({ skill_name: "test", description: "desc" }));
     mockParseBody.mockReturnValue({ success: true, data: { skill_name: "test", description: "desc", force: false } });
     mockGlobalPoolAll.mockReturnValue([]);
-    vi.mocked(generateSkillPackage).mockResolvedValue({ success: false, error: { message: "generation failed" } });
+    vi.mocked(generateSkillPackage).mockResolvedValue({ success: false, error: { code: "GENERATION_FAILED", message: "generation failed" } } as { success: false; error: { code: string; message: string } });
     const res = createMockRes();
     const result = await handleSkills(createMockReq(), res, "POST", "/api/skills/generate", ctx());
     expect(result).toBe(true);

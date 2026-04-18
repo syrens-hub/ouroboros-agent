@@ -10,12 +10,13 @@ import { buildTool, type Tool } from "../../core/tool-framework.ts";
 import { createAgentLoopRunner, createRealLLMCaller, createMockLLMCaller } from "../agent-loop/index.ts";
 import type { LLMConfig } from "../../core/llm-router.ts";
 import type { ToolPermissionContext } from "../../types/index.ts";
-import { notificationBus } from "../../core/notification-bus.ts";
+import { notificationBus } from "../notification/index.ts";
 import { logger } from "../../core/logger.ts";
 import { getMessages } from "../../core/session-db.ts";
 import { insertWorkerTask, updateWorkerTask, listPendingWorkerTasks } from "../../core/repositories/worker-tasks.ts";
 
-const WORKER_TIMEOUT_MS = 60_000; // 1 minute hard timeout for worker execution
+import { WORKER_TIMEOUT_MS } from "../../web/routes/constants.ts";
+// 1 minute hard timeout for worker execution
 const MAX_CONCURRENT_WORKERS = 5;
 
 interface QueueEntry {

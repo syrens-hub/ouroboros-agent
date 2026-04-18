@@ -1,14 +1,20 @@
-export function createMockRes() {
-  const res: any = { headers: {}, _data: "" };
-  res.writeHead = (status: number, headers: any) => {
-    res.statusCode = status;
-    Object.assign(res.headers, headers);
-  };
-  res.setHeader = (k: string, v: string) => {
-    res.headers[k] = v;
-  };
-  res.end = (data: string) => {
-    res._data = data;
-  };
+import type { ServerResponse, IncomingMessage } from "http";
+
+export function createMockRes(): ServerResponse<IncomingMessage> & { _data: string; headers: Record<string, string> } {
+  const res = {
+    statusCode: 200,
+    headers: {},
+    _data: "",
+    writeHead(status: number, headers: Record<string, string>) {
+      this.statusCode = status;
+      Object.assign(this.headers, headers);
+    },
+    setHeader(k: string, v: string) {
+      this.headers[k] = v;
+    },
+    end(data: string) {
+      this._data = data;
+    },
+  } as ServerResponse<IncomingMessage> & { _data: string; headers: Record<string, string> };
   return res;
 }

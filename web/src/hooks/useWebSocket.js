@@ -13,8 +13,8 @@ export function useWebSocket() {
 
   const connect = useCallback((sessionId, handlers) => {
     close()
-    const url = wsUrl(sessionId)
-    const ws = new WebSocket(url)
+    const { url, protocols } = wsUrl(sessionId)
+    const ws = new WebSocket(url, protocols)
     wsRef.current = ws
 
     ws.onopen = () => {

@@ -26,6 +26,7 @@ import { createHash } from "crypto";
 import { appConfig } from "../../core/config.ts";
 import { upsertSkillRegistry } from "../../core/session-db.ts";
 import { parseSkillFrontmatter, clearSkillsCache } from "../learning/index.ts";
+import { scoreSkillCode } from "./quality-gate.ts";
 
 // =============================================================================
 // Hot-Reload Helper (inline copy to avoid importing server-side modules)
@@ -258,9 +259,49 @@ export async function generateSkillPackage(
       .join("");
   }
 
-  const parsed = parseGenerationResponse(text);
+  let parsed = parseGenerationResponse(text);
   if (!parsed) {
     return err({ code: "PARSE_ERROR", message: "LLM response did not follow the required format." });
+  }
+
+  // Quality gate
+  const quality = scoreSkillCode(parsed.indexTs);
+  if (quality.score < 70) {
+    // Retry once with feedback
+    const retryMessages: BaseMessage[] = [
+      ...messages,
+      { role: "assistant", content: text },
+      {
+        role: "user",
+        content:
+          `The generated code has quality issues (score ${quality.score}/100). Please fix them and regenerate:\n` +
+          quality.issues.map((i) => `- ${i}`).join("\n"),
+      },
+    ];
+    const retryRes = await callLLM(llmCfg, retryMessages, []);
+    if (!retryRes.success) {
+      return err({ code: "LLM_ERROR", message: retryRes.error.message });
+    }
+    let retryText = "";
+    if (typeof retryRes.data.content === "string") {
+      retryText = retryRes.data.content;
+    } else {
+      retryText = retryRes.data.content
+        .filter((b): b is { type: "text"; text: string } => typeof b === "object" && b !== null && (b as { type?: string }).type === "text")
+        .map((b) => b.text)
+        .join("");
+    }
+    const retryParsed = parseGenerationResponse(retryText);
+    if (retryParsed) {
+      const retryQuality = scoreSkillCode(retryParsed.indexTs);
+      if (retryQuality.score >= 70) {
+        parsed = retryParsed;
+      } else {
+        return err({ code: "QUALITY_ERROR", message: `Generated code quality too low after retry: ${retryQuality.issues.join("; ")}` });
+      }
+    } else {
+      return err({ code: "QUALITY_ERROR", message: `Retry failed to produce valid format. Original issues: ${quality.issues.join("; ")}` });
+    }
   }
 
   // Validate frontmatter

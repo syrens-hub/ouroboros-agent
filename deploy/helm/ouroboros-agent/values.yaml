@@ -1,0 +1,119 @@
+replicaCount: 1
+
+image:
+  repository: ouroboros-agent
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations: {}
+  hosts:
+    - host: ouroboros.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# ---------------------------------------------------------------
+# Persistent volume for SQLite / uploads / backups.
+# If you use PostgreSQL (db.usePostgres=true) you may still want
+# a small PVC for file uploads and automated backups.
+# ---------------------------------------------------------------
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 10Gi
+
+# ---------------------------------------------------------------
+# Application configuration (non-sensitive).
+# Sensitive values (LLM_API_KEY, WEB_API_TOKEN, DATABASE_URL)
+# should be supplied via `secrets` below or an existing secret.
+# ---------------------------------------------------------------
+config:
+  llm:
+    provider: "openai"
+    model: "gpt-4o"
+    baseUrl: ""
+    temperature: "0.2"
+    maxTokens: "4096"
+  fallbackLlm:
+    provider: ""
+    model: ""
+    baseUrl: ""
+  db:
+    usePostgres: false
+    # For SQLite mode:
+    dir: "/app/.ouroboros"
+    slowQueryThresholdMs: "500"
+  web:
+    port: "8080"
+    allowedOrigins: ""
+  log:
+    level: "info"
+    format: "json"
+  redis:
+    url: ""
+  sentry:
+    dsn: ""
+    environment: "production"
+
+# ---------------------------------------------------------------
+# Secrets. In production, prefer using existingSecret.
+# ---------------------------------------------------------------
+probes:
+  liveness:
+    path: /health
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    path: /ready
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+grafana:
+  enabled: false
+  dashboardLabel: grafana_dashboard
+
+secrets:
+  existingSecret: ""
+  llmApiKey: ""
+  fallbackLlmApiKey: ""
+  webApiToken: ""
+  databaseUrl: ""

@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 import { buildTool } from "../../core/tool-framework.ts";
+import { CODE_EXEC_TIMEOUT_MS } from "../../web/routes/constants.ts";
 import { spawn } from "child_process";
 import {
   mkdirSync,
@@ -36,12 +37,17 @@ function isSensitiveEnvKey(key: string): boolean {
   return SENSITIVE_ENV_PATTERNS.some((p) => p.test(key));
 }
 
-function getSanitizedEnv(): NodeJS.ProcessEnv {
+function getSanitizedEnv(language: "typescript" | "javascript" | "python"): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined && !isSensitiveEnvKey(key)) {
       env[key] = value;
     }
+  }
+  env.PYTHONDONTWRITEBYTECODE = "1";
+  if (language === "python") {
+    // Isolate Python imports to sandbox dir + standard library
+    env.PYTHONPATH = "";
   }
   return env;
 }
@@ -89,18 +95,19 @@ export class SandboxRunner {
     let command: string;
     let args: string[] = [];
 
+    const memoryMb = opts.memoryMb ?? 128;
     if (language === "typescript") {
       fileName = "main.ts";
       command = existsSync(TSX_PATH) ? TSX_PATH : "tsx";
-      args = [join(runDir, fileName)];
+      args = [`--max-old-space-size=${memoryMb}`, join(runDir, fileName)];
     } else if (language === "javascript") {
       fileName = "main.js";
       command = process.execPath;
-      const memoryMb = opts.memoryMb ?? 128;
       args = [`--max-old-space-size=${memoryMb}`, join(runDir, fileName)];
     } else {
       fileName = "main.py";
       command = "python3";
+      // PYTHONPATH isolation and no bytecode writing
       args = [join(runDir, fileName)];
     }
 
@@ -121,12 +128,12 @@ export class SandboxRunner {
       }>((resolve) => {
         const child = spawn(command, args, {
           cwd: runDir,
-          env: getSanitizedEnv(),
+          env: getSanitizedEnv(language),
           stdio: ["pipe", "pipe", "pipe"],
         });
 
         let timer: ReturnType<typeof setTimeout> | null = null;
-        const timeoutMs = opts.timeoutMs ?? 10_000;
+        const timeoutMs = opts.timeoutMs ?? CODE_EXEC_TIMEOUT_MS;
 
         if (timeoutMs > 0) {
           timer = setTimeout(() => {
@@ -150,12 +157,17 @@ export class SandboxRunner {
           child.stdin?.end();
         }
 
+        const MAX_OUTPUT_BYTES = 1_024 * 1_024; // 1 MB cap per stream
         child.stdout?.on("data", (data: Buffer) => {
-          stdout += data.toString("utf-8");
+          if (stdout.length < MAX_OUTPUT_BYTES) {
+            stdout += data.toString("utf-8").slice(0, MAX_OUTPUT_BYTES - stdout.length);
+          }
         });
 
         child.stderr?.on("data", (data: Buffer) => {
-          stderr += data.toString("utf-8");
+          if (stderr.length < MAX_OUTPUT_BYTES) {
+            stderr += data.toString("utf-8").slice(0, MAX_OUTPUT_BYTES - stderr.length);
+          }
         });
 
         child.on("error", (err) => {
@@ -206,7 +218,7 @@ export const runCodeTool = buildTool({
       .describe("Optional input string passed to the process via stdin"),
     timeout_ms: z
       .number()
-      .default(10_000)
+      .default(CODE_EXEC_TIMEOUT_MS)
       .describe("Maximum execution time in milliseconds (default 10s)"),
     memory_mb: z
       .number()

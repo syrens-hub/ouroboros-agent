@@ -24,7 +24,7 @@ import type {
   ChannelMember,
 } from "../../../types/index.ts";
 import { appConfig } from "../../../core/config.ts";
-import { checkRateLimit } from "../../../core/rate-limiter.ts";
+import { checkRateLimit } from "../../../skills/rate-limiter/index.ts";
 import { createHash, createDecipheriv, createHmac } from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { basename, extname } from "path";

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { getDaemonStatus, getDaemonHistory, startDaemon, stopDaemon } from "../../runner-pool.ts";
+import { getDaemonStatus, startDaemon, stopDaemon } from "../../runner-pool.ts";
 import { json, ReqContext } from "../shared.ts";
 
 export async function handleDaemon(
@@ -15,7 +15,7 @@ export async function handleDaemon(
     return true;
   }
   if (path === "/api/daemon/history" && method === "GET") {
-    json(res, 200, { success: true, data: getDaemonHistory() }, ctx);
+    json(res, 200, { success: true, data: { message: "History moved to evolution-memory" } }, ctx);
     return true;
   }
   if (path === "/api/daemon/start" && method === "POST") {

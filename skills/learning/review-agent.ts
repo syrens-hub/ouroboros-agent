@@ -11,7 +11,7 @@
 import type { BaseMessage, Result } from "../../types/index.ts";
 import type { LLMConfig } from "../../core/llm-router.ts";
 import { ok, err } from "../../types/index.ts";
-import { callLLM } from "../../core/llm-router.ts";
+import { callAuxiliary } from "../../core/auxiliary-llm.ts";
 import { saveTrajectory, getMessages, logModification, upsertSkillRegistry } from "../../core/session-db.ts";
 import { writeSkill, createTrajectoryCompressor } from "./index.ts";
 import { defaultRuleEngine } from "../../core/rule-engine.ts";
@@ -145,7 +145,7 @@ export async function runBackgroundReview(
       { role: "user", content: `Review this trajectory:\n\n${JSON.stringify(trajectoryRes.data, null, 2)}` },
     ];
 
-    const llmRes = await callLLM(llmCfg, reviewMessages, []);
+    const llmRes = await callAuxiliary("review", reviewMessages);
     if (!llmRes.success) return llmRes;
 
     const text =

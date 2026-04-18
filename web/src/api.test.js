@@ -43,11 +43,15 @@ describe('api.js', () => {
 
   describe('wsUrl', () => {
     it('builds wss url with token and sessionId', () => {
-      expect(api.wsUrl('sess-1')).toBe('wss://example.com/ws?token=test-token-123&sessionId=sess-1')
+      const result = api.wsUrl('sess-1')
+      expect(result.url).toBe('wss://example.com/ws?sessionId=sess-1')
+      expect(result.protocols).toEqual(['ouroboros-token-test-token-123'])
     })
 
     it('builds wss url without sessionId', () => {
-      expect(api.wsUrl()).toBe('wss://example.com/ws?token=test-token-123')
+      const result = api.wsUrl()
+      expect(result.url).toBe('wss://example.com/ws')
+      expect(result.protocols).toEqual(['ouroboros-token-test-token-123'])
     })
   })
 

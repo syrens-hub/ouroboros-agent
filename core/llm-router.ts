@@ -1,7 +1,11 @@
 /**
  * Ouroboros LLM Router
- * ====================
  * Unified streaming interface for OpenAI, Anthropic, and local endpoints.
+ *
+ * This file re-exports types and entry points for backward compatibility.
+ * Implementation details have been moved to:
+ *   - llm-stream-helpers.ts   (signal management, key masking, schema extraction)
+ *   - llm-stream-providers.ts (per-provider streaming implementations)
  */
 
 import type {
@@ -15,22 +19,20 @@ import type {
 import { ok, err } from "../types/index.ts";
 import { sanitizeMessageForLLM } from "./prompt-defense.ts";
 export { sanitizeMessageForLLM } from "./prompt-defense.ts";
-import { zodToJsonSchema } from "zod-to-json-schema";
 
-export function maskApiKey(str: string): string {
-  return str
-    .replace(/sk-[a-zA-Z0-9]{16,}/g, "***")
-    .replace(/Bearer\s+[a-zA-Z0-9_-]+/gi, "Bearer ***")
-    .replace(/(token\s*["\s:]+)\s*[a-zA-Z0-9_-]{16,}/gi, "$1***");
-}
+// Re-export helpers from llm-stream-helpers for backward compatibility
+export { maskApiKey, extractZodSchema } from "./llm-stream-helpers.ts";
+import { maskApiKey } from "./llm-stream-helpers.ts";
 
-function extractZodSchema(schema: unknown): Record<string, unknown> {
-  try {
-    return zodToJsonSchema(schema as import("zod").ZodTypeAny, { target: "openApi3" });
-  } catch {
-    return {};
-  }
-}
+// Re-export stream providers
+import {
+  streamOpenAI,
+  streamAnthropic,
+  streamLocal,
+  streamMinimax,
+  streamQwen,
+  streamGemini,
+} from "./llm-stream-providers.ts";
 
 // =============================================================================
 // Provider Types
@@ -47,12 +49,11 @@ export interface LLMConfig {
   temperature?: number;
 }
 
-export interface LLMStreamChunk {
-  type: "text" | "tool_use" | "usage";
-  text?: string;
-  toolUse?: Partial<ToolUseBlock>;
-  usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
-}
+export type LLMStreamChunk =
+  | { type: "text"; text: string }
+  | { type: "tool_use"; toolUse: Partial<ToolUseBlock> }
+  | { type: "usage"; usage: { promptTokens: number; completionTokens: number; totalTokens: number } }
+  | { type: "response_headers"; headers: Record<string, string> };
 
 // =============================================================================
 // Content formatting helpers for multimodal support
@@ -121,404 +122,6 @@ export function formatGeminiParts(content: BaseMessage["content"]): Array<{ text
     });
   }
   return [{ text: JSON.stringify(content) }];
-}
-
-// =============================================================================
-// OpenAI-compatible streaming
-// =============================================================================
-
-async function* streamOpenAI(
-  cfg: LLMConfig,
-  messages: BaseMessage[],
-  tools: Tool<unknown, unknown, unknown>[],
-  signal?: AbortSignal
-): AsyncGenerator<LLMStreamChunk> {
-  const url = cfg.baseUrl || "https://api.openai.com/v1/chat/completions";
-  const body: Record<string, unknown> = {
-    model: cfg.model,
-    messages: messages.map((m) => {
-      const base: Record<string, unknown> = {
-        role: m.role === "tool_result" ? "tool" : m.role,
-        content: formatOpenAIMessageContent(m.content),
-        name: m.name,
-        tool_call_id: m.role === "tool_result" ? m.name : undefined,
-      };
-      if (m.role === "assistant" && Array.isArray(m.content)) {
-        const toolCalls = m.content
-          .filter((b: unknown) => typeof b === "object" && b !== null && (b as { type?: string }).type === "tool_use")
-          .map((b: unknown) => ({
-            id: (b as { id?: string }).id || "",
-            type: "function",
-            function: {
-              name: (b as { name?: string }).name || "",
-              arguments: JSON.stringify((b as { input?: unknown }).input || {}),
-            },
-          }));
-        if (toolCalls.length > 0) {
-          base.tool_calls = toolCalls;
-        }
-      }
-      return base;
-    }),
-    stream: true,
-    max_tokens: cfg.maxTokens ?? 4096,
-    temperature: cfg.temperature ?? 0.2,
-  };
-
-  if (tools.length > 0) {
-    body.tools = tools.map((t) => ({
-      type: "function",
-      function: {
-        name: t.name,
-        description: t.description,
-        parameters: extractZodSchema(t.inputSchema),
-      },
-    }));
-    body.tool_choice = "auto";
-  }
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${cfg.apiKey || ""}`,
-    },
-    body: JSON.stringify(body),
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`OpenAI error ${res.status}: ${txt}`);
-  }
-
-  const reader = res.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const pendingToolCalls = new Map<string, { type: "tool_use"; id: string; name: string; input: string }>();
-
-  try {
-    while (true) {
-      if (signal?.aborted) {
-        throw new Error("Aborted");
-      }
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data: ")) continue;
-        const data = trimmed.slice(6);
-        if (data === "[DONE]") continue;
-        try {
-          const json = JSON.parse(data);
-          if (json.usage) {
-            const u = json.usage;
-            yield {
-              type: "usage",
-              usage: {
-                promptTokens: typeof u.prompt_tokens === "number" ? u.prompt_tokens : 0,
-                completionTokens: typeof u.completion_tokens === "number" ? u.completion_tokens : 0,
-                totalTokens: typeof u.total_tokens === "number" ? u.total_tokens : 0,
-              },
-            };
-          }
-          const delta = json.choices?.[0]?.delta;
-          if (!delta) continue;
-
-          if (delta.content) {
-            yield { type: "text", text: delta.content };
-          }
-
-          if (delta.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              const id = tc.id || tc.index;
-              const existing = pendingToolCalls.get(id) || {
-                type: "tool_use",
-                id,
-                name: "",
-                input: "",
-              };
-              if (tc.function?.name) existing.name = tc.function.name;
-              if (tc.function?.arguments) {
-                existing.input = (existing.input as string) + tc.function.arguments;
-              }
-              pendingToolCalls.set(id, existing);
-              let parsedInput: Record<string, unknown> = {};
-              try {
-                if (existing.input) parsedInput = JSON.parse(existing.input);
-              } catch {
-                // leave as empty object until fully parsed
-              }
-              yield {
-                type: "tool_use",
-                toolUse: { ...existing, input: parsedInput },
-              };
-            }
-          }
-        } catch {
-          // ignore malformed JSON
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-// =============================================================================
-// Anthropic streaming
-// =============================================================================
-
-async function* streamAnthropic(
-  cfg: LLMConfig,
-  messages: BaseMessage[],
-  tools: Tool<unknown, unknown, unknown>[],
-  signal?: AbortSignal
-): AsyncGenerator<LLMStreamChunk> {
-  const url = cfg.baseUrl || "https://api.anthropic.com/v1/messages";
-
-  // Separate system message
-  const system = messages.find((m) => m.role === "system")?.content as string | undefined;
-  const nonSystem = messages.filter((m) => m.role !== "system");
-
-  const body: Record<string, unknown> = {
-    model: cfg.model,
-    messages: nonSystem.map((m) => ({
-      role: m.role === "tool_result" ? "user" : m.role,
-      content: formatAnthropicContent(m.content),
-    })),
-    stream: true,
-    max_tokens: cfg.maxTokens ?? 4096,
-    temperature: cfg.temperature ?? 0.2,
-  };
-  if (system) body.system = system;
-
-  if (tools.length > 0) {
-    body.tools = tools.map((t) => ({
-      name: t.name,
-      description: t.description,
-      input_schema: extractZodSchema(t.inputSchema),
-    }));
-  }
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": cfg.apiKey || "",
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify(body),
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`Anthropic error ${res.status}: ${txt}`);
-  }
-
-  const reader = res.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  try {
-    while (true) {
-      if (signal?.aborted) {
-        throw new Error("Aborted");
-      }
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data: ")) continue;
-        const data = trimmed.slice(6);
-        try {
-          const json = JSON.parse(data);
-          if (json.type === "message_start" && json.message?.usage) {
-            const u = json.message.usage;
-            yield {
-              type: "usage",
-              usage: {
-                promptTokens: typeof u.input_tokens === "number" ? u.input_tokens : 0,
-                completionTokens: typeof u.output_tokens === "number" ? u.output_tokens : 0,
-                totalTokens: (typeof u.input_tokens === "number" ? u.input_tokens : 0) + (typeof u.output_tokens === "number" ? u.output_tokens : 0),
-              },
-            };
-          }
-          if (json.type === "message_delta" && json.usage) {
-            const u = json.usage;
-            yield {
-              type: "usage",
-              usage: {
-                promptTokens: 0,
-                completionTokens: typeof u.output_tokens === "number" ? u.output_tokens : 0,
-                totalTokens: typeof u.output_tokens === "number" ? u.output_tokens : 0,
-              },
-            };
-          }
-          if (json.type === "content_block_delta") {
-            const delta = json.delta;
-            if (delta.type === "text_delta") {
-              yield { type: "text", text: delta.text };
-            } else if (delta.type === "input_json_delta") {
-              yield {
-                type: "tool_use",
-                toolUse: {
-                  type: "tool_use",
-                  id: json.content_block?.id || "",
-                  name: json.content_block?.name || "",
-                  input: delta.partial_json,
-                },
-              };
-            }
-          }
-        } catch {
-          // ignore
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-// =============================================================================
-// Local / generic OpenAI-compatible
-// =============================================================================
-
-async function* streamLocal(
-  cfg: LLMConfig,
-  messages: BaseMessage[],
-  tools: Tool<unknown, unknown, unknown>[],
-  signal?: AbortSignal
-): AsyncGenerator<LLMStreamChunk> {
-  // Local endpoints usually speak OpenAI format
-  yield* streamOpenAI({ ...cfg, baseUrl: cfg.baseUrl || "http://localhost:11434/v1/chat/completions" }, messages, tools, signal);
-}
-
-async function* streamMinimax(
-  cfg: LLMConfig,
-  messages: BaseMessage[],
-  tools: Tool<unknown, unknown, unknown>[],
-  signal?: AbortSignal
-): AsyncGenerator<LLMStreamChunk> {
-  yield* streamOpenAI(
-    { ...cfg, baseUrl: cfg.baseUrl || "https://api.minimax.chat/v1/chat/completions" },
-    messages,
-    tools,
-    signal
-  );
-}
-
-async function* streamQwen(
-  cfg: LLMConfig,
-  messages: BaseMessage[],
-  tools: Tool<unknown, unknown, unknown>[],
-  signal?: AbortSignal
-): AsyncGenerator<LLMStreamChunk> {
-  yield* streamOpenAI(
-    { ...cfg, baseUrl: cfg.baseUrl || "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions" },
-    messages,
-    tools,
-    signal
-  );
-}
-
-async function* streamGemini(
-  cfg: LLMConfig,
-  messages: BaseMessage[],
-  _tools: Tool<unknown, unknown, unknown>[],
-  signal?: AbortSignal
-): AsyncGenerator<LLMStreamChunk> {
-  const model = cfg.model || "gemini-2.0-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${encodeURIComponent(cfg.apiKey || "")}&alt=sse`;
-
-  const system = messages.find((m) => m.role === "system")?.content as string | undefined;
-  const contents = messages
-    .filter((m) => m.role !== "system")
-    .map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: formatGeminiParts(m.content),
-    }));
-
-  const body: Record<string, unknown> = {
-    contents,
-    generationConfig: {
-      maxOutputTokens: cfg.maxTokens ?? 4096,
-      temperature: cfg.temperature ?? 0.2,
-    },
-  };
-  if (system) {
-    body.systemInstruction = { parts: [{ text: system }] };
-  }
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`Gemini error ${res.status}: ${txt}`);
-  }
-
-  const reader = res.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  try {
-    while (true) {
-      if (signal?.aborted) throw new Error("Aborted");
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data: ")) continue;
-        const data = trimmed.slice(6);
-        if (data === "[DONE]") continue;
-        try {
-          const json = JSON.parse(data);
-          if (json.usageMetadata) {
-            const u = json.usageMetadata;
-            yield {
-              type: "usage",
-              usage: {
-                promptTokens: typeof u.promptTokenCount === "number" ? u.promptTokenCount : 0,
-                completionTokens: typeof u.candidatesTokenCount === "number" ? u.candidatesTokenCount : 0,
-                totalTokens: typeof u.totalTokenCount === "number" ? u.totalTokenCount : 0,
-              },
-            };
-          }
-          const candidate = json.candidates?.[0];
-          if (!candidate) continue;
-          const parts = candidate.content?.parts || [];
-          for (const part of parts) {
-            if (part.text) {
-              yield { type: "text", text: part.text };
-            }
-          }
-        } catch {
-          // ignore malformed JSON
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
 }
 
 // =============================================================================
@@ -606,7 +209,6 @@ export async function callLLM(
     contentBlocks.push({ type: "text", text: textParts.join("") });
   }
   for (const tc of toolCalls.values()) {
-    // Skip malformed tool calls with no name
     if (!tc.name) continue;
     let parsedInput: Record<string, unknown>;
     try {

@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { rmSync, existsSync } from "fs";
+import { rmSync, existsSync, mkdtempSync } from "fs";
 import { join } from "path";
+import { tmpdir } from "os";
 import { appConfig } from "../../core/config.ts";
 
-const TEST_DB_DIR = join(process.cwd(), ".ouroboros", "test-session-db-" + Date.now());
+const TEST_DB_DIR = mkdtempSync(join(tmpdir(), "ouroboros-session-db-"));
 
 // We must override the DB dir before importing session-db so it uses the test path.
 appConfig.db.dir = TEST_DB_DIR;
@@ -23,14 +24,12 @@ import {
 describe("SessionDB", () => {
   beforeEach(() => {
     resetDbSingleton();
-    appConfig.db.dir = join(process.cwd(), ".ouroboros", "test-session-db-" + Date.now());
+    appConfig.db.dir = mkdtempSync(join(tmpdir(), "ouroboros-session-db-"));
   });
 
   afterEach(() => {
     try {
-      const dir = appConfig.db.dir.startsWith("/")
-        ? appConfig.db.dir
-        : join(process.cwd(), appConfig.db.dir);
+      const dir = appConfig.db.dir;
       if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
     } catch {
       // ignore

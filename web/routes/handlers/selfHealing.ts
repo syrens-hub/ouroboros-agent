@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { IncomingMessage, ServerResponse } from "http";
-import { json, readBody, parseBody, selfHealer, ReqContext } from "../shared.ts";
+import { json, readJsonBody, selfHealer, ReqContext 
+} from "../shared.ts";
 
 export async function handleSelfHealing(
   req: IncomingMessage,
@@ -21,19 +22,9 @@ export async function handleSelfHealing(
     return true;
   }
   if (path === "/api/self-healing/rollback" && method === "POST") {
-    let body: string;
-    try {
-      body = await readBody(req);
-    } catch (e) {
-      if (e instanceof Error && e.message === "PAYLOAD_TOO_LARGE") {
-        json(res, 413, { success: false, error: { message: "Payload too large" } }, ctx);
-        return true;
-      }
-      throw e;
-    }
-    const parsed = parseBody(body, z.object({ rollbackPointId: z.string() }));
+    const parsed = await readJsonBody(req, z.object({ rollbackPointId: z.string() }));
     if (!parsed.success) {
-      json(res, 400, { success: false, error: { message: parsed.error } }, ctx);
+      json(res, parsed.status, { success: false, error: { message: parsed.error } }, ctx);
       return true;
     }
     const result = await selfHealer.performRollback(parsed.data.rollbackPointId);

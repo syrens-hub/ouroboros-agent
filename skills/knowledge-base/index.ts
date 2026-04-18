@@ -80,7 +80,7 @@ export class KnowledgeBase {
   ): Promise<IngestResult> {
     try {
       const isFile = options?.isFile ?? true;
-      const content = isFile ? extractText(filePathOrContent) : filePathOrContent;
+      const content = isFile ? await extractText(filePathOrContent) : filePathOrContent;
       const filename = options?.filename ?? (isFile ? filePathOrContent.split("/").pop() || "document.txt" : "inline.txt");
       const format = options?.format ?? filename.split(".").pop() ?? "txt";
 

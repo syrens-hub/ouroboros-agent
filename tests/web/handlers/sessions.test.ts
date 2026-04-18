@@ -13,22 +13,27 @@ const mockRemoveRunner = vi.fn();
 const mockResolveConfirm = vi.fn();
 
 vi.mock("../../../web/routes/shared.ts", () => ({
-  json: (...args: any[]) => mockJson(...args),
-  readBody: (...args: any[]) => mockReadBody(...args),
-  parseBody: (...args: any[]) => mockParseBody(...args),
+  json: (...args: unknown[]) => mockJson(...args),
+  readBody: (...args: unknown[]) => mockReadBody(...args),
+  parseBody: (...args: unknown[]) => mockParseBody(...args),
   ConfirmBodySchema: {},
   ReqContext: {},
 }));
 
 vi.mock("../../../core/session-db.ts", () => ({
-  createSession: (...args: any[]) => mockCreateSession(...args),
-  listSessions: (...args: any[]) => mockListSessions(...args),
-  getMessages: (...args: any[]) => mockGetMessages(...args),
+  createSession: (...args: unknown[]) => mockCreateSession(...args),
+  listSessions: (...args: unknown[]) => mockListSessions(...args),
+  getMessages: (...args: unknown[]) => mockGetMessages(...args),
 }));
 
 vi.mock("../../../web/runner-pool.ts", () => ({
-  removeRunner: (...args: any[]) => mockRemoveRunner(...args),
-  resolveConfirm: (...args: any[]) => mockResolveConfirm(...args),
+  removeRunner: (...args: unknown[]) => mockRemoveRunner(...args),
+  resolveConfirm: (...args: unknown[]) => mockResolveConfirm(...args),
+}));
+
+const mockGetTraceEvents = vi.fn();
+vi.mock("../../../core/repositories/trajectory.ts", () => ({
+  getTraceEvents: (...args: unknown[]) => mockGetTraceEvents(...args),
 }));
 
 function createMockReq(url = "/") {
@@ -84,6 +89,46 @@ describe("handleSessions", () => {
     expect(result).toBe(true);
     expect(mockRemoveRunner).toHaveBeenCalledWith("s1");
     expect(mockJson).toHaveBeenCalledWith(res, 200, { success: true }, expect.any(Object));
+  });
+
+  it("GET /api/sessions/s1/traces no query params", async () => {
+    mockGetTraceEvents.mockResolvedValue({ success: true, data: [] });
+    const res = createMockRes();
+    const result = await handleSessions(
+      createMockReq("/api/sessions/s1/traces"),
+      res,
+      "GET",
+      "/api/sessions/s1/traces",
+      ctx()
+    );
+    expect(result).toBe(true);
+    expect(mockGetTraceEvents).toHaveBeenCalledWith("s1", undefined);
+    expect(mockJson).toHaveBeenCalledWith(
+      res,
+      200,
+      { success: true, data: [] },
+      expect.any(Object)
+    );
+  });
+
+  it("GET /api/sessions/s1/traces with turn=3", async () => {
+    mockGetTraceEvents.mockResolvedValue({ success: true, data: [{ traceId: "t1" }] });
+    const res = createMockRes();
+    const result = await handleSessions(
+      createMockReq("/api/sessions/s1/traces?turn=3"),
+      res,
+      "GET",
+      "/api/sessions/s1/traces",
+      ctx()
+    );
+    expect(result).toBe(true);
+    expect(mockGetTraceEvents).toHaveBeenCalledWith("s1", 3);
+    expect(mockJson).toHaveBeenCalledWith(
+      res,
+      200,
+      { success: true, data: [{ traceId: "t1" }] },
+      expect.any(Object)
+    );
   });
 
   it("GET /api/sessions/s1/messages no query params", async () => {

@@ -5,6 +5,7 @@
  */
 
 import { getDb } from "../db-manager.ts";
+import { lastId, rowCount, rowsAs } from "../db-utils.ts";
 
 export interface WorkerTaskRow {
   id: number;
@@ -41,7 +42,7 @@ export function insertWorkerTask(
       entry.error ?? null,
       entry.priority ?? 0
     );
-    return { success: true, id: Number((result as { lastInsertRowid: number | bigint }).lastInsertRowid) };
+    return { success: true, id: lastId(result) };
   } catch (e) {
     return { success: false, error: String(e) };
   }
@@ -79,7 +80,7 @@ export function updateWorkerTask(
     const sql = `UPDATE worker_tasks SET ${sets.join(", ")} WHERE id = ?`;
     params.push(id);
     const result = db.prepare(sql).run(...params);
-    return { success: true, changes: (result as { changes: number }).changes };
+    return { success: true, changes: rowCount(result) };
   } catch (e) {
     return { success: false, error: String(e) };
   }
@@ -88,9 +89,10 @@ export function updateWorkerTask(
 export function listPendingWorkerTasks(): { success: true; data: WorkerTaskRow[] } | { success: false; error: string } {
   try {
     const db = getDb();
-    const rows = db.prepare(
+    const rawRows = db.prepare(
       `SELECT * FROM worker_tasks WHERE status IN ('queued', 'running') ORDER BY priority DESC, created_at ASC`
-    ).all() as WorkerTaskRow[];
+    ).all();
+    const rows = rowsAs<WorkerTaskRow>(rawRows);
     return { success: true, data: rows };
   } catch (e) {
     return { success: false, error: String(e) };
@@ -101,7 +103,7 @@ export function deleteWorkerTask(id: number): { success: true; changes: number }
   try {
     const db = getDb();
     const result = db.prepare("DELETE FROM worker_tasks WHERE id = ?").run(id);
-    return { success: true, changes: (result as { changes: number }).changes };
+    return { success: true, changes: rowCount(result) };
   } catch (e) {
     return { success: false, error: String(e) };
   }

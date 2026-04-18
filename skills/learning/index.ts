@@ -13,13 +13,96 @@ import type {
   Result,
 } from "../../types/index.ts";
 import { ok, err } from "../../types/index.ts";
-import { readFileSync, existsSync, readdirSync, mkdirSync, writeFileSync } from "fs";
+import { readFileSync, existsSync, readdirSync, mkdirSync, writeFileSync, statSync, unlinkSync } from "fs";
 import { join } from "path";
 import { appConfig } from "../../core/config.ts";
 import { upsertSkillRegistry } from "../../core/session-db.ts";
+import { snapshotSkillVersion } from "../skill-versioning/index.ts";
+import { scanSkill } from "../skills-guard/index.ts";
 
 let _skillsCache: { data: Skill[]; expiresAt: number } | null = null;
 const SKILLS_CACHE_TTL_MS = 5_000;
+
+const SKILL_CACHE_FILE = join(
+  appConfig.db.dir.startsWith("/") ? appConfig.db.dir : join(process.cwd(), appConfig.db.dir),
+  "skill-cache.json"
+);
+
+type DiskSkill = {
+  name: string;
+  frontmatter: SkillFrontmatter;
+  markdownBody: string;
+  directory: string;
+  sourceCodeFiles?: Record<string, string>;
+};
+
+type SkillDiskCache = {
+  skills: Record<string, { mtime: number; skill: DiskSkill }>;
+  lastScanAt: number;
+};
+
+function readDiskCache(): SkillDiskCache | null {
+  if (!existsSync(SKILL_CACHE_FILE)) return null;
+  try {
+    const raw = JSON.parse(readFileSync(SKILL_CACHE_FILE, "utf-8")) as SkillDiskCache;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+function writeDiskCache(cache: SkillDiskCache): void {
+  try {
+    writeFileSync(SKILL_CACHE_FILE, JSON.stringify(cache), "utf-8");
+  } catch {
+    // ignore disk cache write failures
+  }
+}
+
+function skillToDisk(skill: Skill): DiskSkill {
+  const disk: DiskSkill = {
+    name: skill.name,
+    frontmatter: skill.frontmatter,
+    markdownBody: skill.markdownBody,
+    directory: skill.directory,
+  };
+  if (skill.sourceCodeFiles && skill.sourceCodeFiles.size > 0) {
+    disk.sourceCodeFiles = Object.fromEntries(skill.sourceCodeFiles.entries());
+  }
+  return disk;
+}
+
+function skillFromDisk(disk: DiskSkill): Skill {
+  const skill: Skill = {
+    name: disk.name,
+    frontmatter: disk.frontmatter,
+    markdownBody: disk.markdownBody,
+    directory: disk.directory,
+  };
+  if (disk.sourceCodeFiles && Object.keys(disk.sourceCodeFiles).length > 0) {
+    (skill as Skill & { sourceCodeFiles: Map<string, string> }).sourceCodeFiles = new Map(
+      Object.entries(disk.sourceCodeFiles)
+    );
+  }
+  return skill;
+}
+
+function buildSkill(skillDir: string, content: string): Skill | null {
+  const fmResult = parseSkillFrontmatter(content);
+  if (!fmResult.success) return null;
+  const sourceCodeFiles = new Map<string, string>();
+  const codePath = join(skillDir, "index.ts");
+  if (existsSync(codePath)) {
+    sourceCodeFiles.set("index.ts", readFileSync(codePath, "utf-8"));
+  }
+  return {
+    name: fmResult.data.name,
+    frontmatter: fmResult.data,
+    markdownBody: content,
+    directory: skillDir,
+    sourceCodeFiles,
+  };
+}
 
 function getCachedSkills(fn: () => Skill[]): Skill[] {
   const now = Date.now();
@@ -33,6 +116,24 @@ function getCachedSkills(fn: () => Skill[]): Skill[] {
 
 export function clearSkillsCache(): void {
   _skillsCache = null;
+  try {
+    if (existsSync(SKILL_CACHE_FILE)) {
+      unlinkSync(SKILL_CACHE_FILE);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+let _skillDiscoveryStats = { lastScanAt: 0, skillCount: 0 };
+
+export function getSkillDiscoveryStats(): { lastScanAt: number; skillCount: number } {
+  return { ..._skillDiscoveryStats };
+}
+
+export function forceRescanSkills(): Skill[] {
+  clearSkillsCache();
+  return discoverSkills();
 }
 
 // =============================================================================
@@ -157,30 +258,46 @@ export function parseSkillFrontmatter(markdown: string): Result<SkillFrontmatter
 export function discoverSkills(): Skill[] {
   return getCachedSkills(() => {
     ensureSkillDir();
+    const diskCache = readDiskCache();
+    const cachedSkills = diskCache?.skills ?? {};
     const skills: Skill[] = [];
+    const nextCache: SkillDiskCache["skills"] = {};
+    const seen = new Set<string>();
+
     for (const entry of readdirSync(SKILL_DIR, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
+      if (entry.name === "archive") continue;
       const skillDir = join(SKILL_DIR, entry.name);
       const skillPath = join(skillDir, "SKILL.md");
       if (!existsSync(skillPath)) continue;
-      const content = readFileSync(skillPath, "utf-8");
-      const fmResult = parseSkillFrontmatter(content);
-      if (!fmResult.success) continue;
 
-      const sourceCodeFiles = new Map<string, string>();
-      const codePath = join(skillDir, "index.ts");
-      if (existsSync(codePath)) {
-        sourceCodeFiles.set("index.ts", readFileSync(codePath, "utf-8"));
+      seen.add(skillDir);
+      const mtime = statSync(skillPath).mtimeMs;
+      const cached = cachedSkills[skillDir];
+
+      if (cached && cached.mtime === mtime) {
+        skills.push(skillFromDisk(cached.skill));
+        nextCache[skillDir] = cached;
+        continue;
       }
 
-      skills.push({
-        name: fmResult.data.name,
-        frontmatter: fmResult.data,
-        markdownBody: content,
-        directory: skillDir,
-        sourceCodeFiles,
-      });
+      const content = readFileSync(skillPath, "utf-8");
+      const skill = buildSkill(skillDir, content);
+      if (!skill) continue;
+      skills.push(skill);
+      nextCache[skillDir] = { mtime, skill: skillToDisk(skill) };
     }
+
+    // Remove deleted skills from disk cache if any were present
+    for (const key of Object.keys(cachedSkills)) {
+      if (!seen.has(key)) {
+        delete cachedSkills[key];
+      }
+    }
+
+    const now = Date.now();
+    _skillDiscoveryStats = { lastScanAt: now, skillCount: skills.length };
+    writeDiskCache({ skills: nextCache, lastScanAt: now });
     return skills;
   });
 }
@@ -190,10 +307,22 @@ export function writeSkill(name: string, markdown: string): Result<void> {
   const skillDir = join(SKILL_DIR, name);
   if (!existsSync(skillDir)) {
     mkdirSync(skillDir, { recursive: true });
+  } else {
+    // Snapshot existing skill before overwriting
+    snapshotSkillVersion(name, skillDir);
   }
   try {
     writeFileSync(join(skillDir, "SKILL.md"), markdown, "utf-8");
     clearSkillsCache();
+    // Best-effort security scan update
+    (async () => {
+      try {
+        const scan = scanSkill(skillDir, "agent-created");
+        await upsertSkillRegistry(name, skillDir, {}, false, JSON.stringify(scan), scan.trustLevel);
+      } catch {
+        // ignore
+      }
+    })();
     return ok(undefined);
   } catch (e) {
     return err({ code: "WRITE_ERROR", message: String(e) });
@@ -267,5 +396,45 @@ export const readSkillTool = buildTool({
     const path = join(SKILL_DIR, name, "SKILL.md");
     if (!existsSync(path)) return { content: null };
     return { content: readFileSync(path, "utf-8") };
+  },
+});
+
+import { listSkillVersions, restoreSkillVersion, pruneSkillVersions } from "../skill-versioning/index.ts";
+
+export const listSkillVersionsTool = buildTool({
+  name: "list_skill_versions",
+  description: "List archived versions of a skill.",
+  inputSchema: z.object({ skill_name: z.string() }),
+  isReadOnly: true,
+  isConcurrencySafe: true,
+  async call({ skill_name }) {
+    return { success: true, versions: listSkillVersions(skill_name) };
+  },
+});
+
+export const restoreSkillVersionTool = buildTool({
+  name: "restore_skill_version",
+  description: "Restore a skill to a previous archived version.",
+  inputSchema: z.object({ skill_name: z.string(), version_id: z.string() }),
+  isReadOnly: false,
+  isConcurrencySafe: false,
+  async call({ skill_name, version_id }) {
+    const skillDir = join(SKILL_DIR, skill_name);
+    const result = restoreSkillVersion(skill_name, version_id, skillDir);
+    if (!result.success) throw new Error(result.error.message);
+    clearSkillsCache();
+    return { success: true, restored: version_id, skill: skill_name };
+  },
+});
+
+export const pruneSkillVersionsTool = buildTool({
+  name: "prune_skill_versions",
+  description: "Keep only the most recent N versions of a skill.",
+  inputSchema: z.object({ skill_name: z.string(), keep_count: z.number().default(20) }),
+  isReadOnly: false,
+  isConcurrencySafe: false,
+  async call({ skill_name, keep_count }) {
+    const { deleted } = pruneSkillVersions(skill_name, keep_count ?? 20);
+    return { success: true, deleted };
   },
 });

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { IncomingMessage, ServerResponse } from "http";
-import { json, readBody, parseBody, contextManager, ReqContext } from "../shared.ts";
+import { json, readJsonBody, contextManager, ReqContext 
+} from "../shared.ts";
 
 export async function handleContext(
   req: IncomingMessage,
@@ -21,17 +22,7 @@ export async function handleContext(
     return true;
   }
   if (path === "/api/context/injections" && method === "POST") {
-    let body: string;
-    try {
-      body = await readBody(req);
-    } catch (e) {
-      if (e instanceof Error && e.message === "PAYLOAD_TOO_LARGE") {
-        json(res, 413, { success: false, error: { message: "Payload too large" } }, ctx);
-        return true;
-      }
-      throw e;
-    }
-    const parsed = parseBody(body, z.object({
+    const parsed = await readJsonBody(req, z.object({
       id: z.string(),
       content: z.string(),
       tokenCount: z.number(),
@@ -41,7 +32,7 @@ export async function handleContext(
       maxFrequency: z.number().optional(),
     }));
     if (!parsed.success) {
-      json(res, 400, { success: false, error: { message: parsed.error } }, ctx);
+      json(res, parsed.status, { success: false, error: { message: parsed.error } }, ctx);
       return true;
     }
     contextManager.getInjector().addInjection(parsed.data);

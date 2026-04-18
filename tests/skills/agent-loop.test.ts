@@ -8,7 +8,7 @@ import { z } from "zod";
 const TEST_DB_DIR = join(process.cwd(), ".ouroboros", "test-agent-loop-" + Date.now());
 appConfig.db.dir = TEST_DB_DIR;
 
-import { createAgentLoopRunner, type LLMCaller } from "../../skills/agent-loop/index.ts";
+import { createAgentLoopRunner, createMockLLMCaller, createRealLLMCaller, type LLMCaller } from "../../skills/agent-loop/index.ts";
 import type { BaseMessage, ToolProgressEvent } from "../../types/index.ts";
 import { resetDbSingleton } from "../../core/session-db.ts";
 
@@ -369,5 +369,77 @@ describe("Agent Loop", () => {
     expect(ingested[0].opts.filename).toMatch(/computer-use-\d+\.md/);
     expect(ingested[0].content).toContain("Goal: test");
     expect(ingested[0].content).toContain("click -> #btn");
+  });
+
+  it("createMockLLMCaller returns deterministic responses", async () => {
+    const caller = createMockLLMCaller();
+    const res = await caller.call([{ role: "user", content: "hi" }], []);
+    expect(res.role).toBe("assistant");
+    expect(typeof res.content).toBe("string");
+  });
+
+  it("createRealLLMCaller returns a callable LLMCaller", () => {
+    const caller = createRealLLMCaller({ provider: "openai", model: "gpt-4", apiKey: "sk-test" });
+    expect(typeof caller.call).toBe("function");
+  });
+
+  it("yields progress events during tool execution", async () => {
+    const progressTool = buildTool({
+      name: "progress_tool",
+      description: "progress",
+      inputSchema: z.object({}),
+      isReadOnly: true,
+      isConcurrencySafe: true,
+      async call(_input, ctx) {
+        ctx.reportProgress({ type: "progress", toolName: "progress_tool", status: "running", progress: 0.5, step: 1, totalSteps: 2 });
+        return { ok: true };
+      },
+    });
+
+    const mockCaller: LLMCaller = {
+      async call() {
+        return {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "tu_prog", name: "progress_tool", input: {} }],
+        };
+      },
+    };
+
+    const runner = createAgentLoopRunner({
+      sessionId: "sess_progress",
+      tools: [progressTool],
+      llmCaller: mockCaller,
+      enableBackgroundReview: false,
+      askConfirmCallback: async () => true,
+    });
+
+    const events: (BaseMessage | { type: "tool_result"; toolUseId: string; content: string; isError?: boolean } | ToolProgressEvent)[] = [];
+    for await (const ev of runner.run("go")) events.push(ev);
+
+
+    const progressEvents = events.filter((e) => "type" in e && e.type === "progress") as ToolProgressEvent[];
+    expect(progressEvents.length).toBeGreaterThan(0);
+    expect(progressEvents[0].toolName).toBe("progress_tool");
+  });
+
+  it("propagates LLM call failure as generator error", async () => {
+    const failingCaller: LLMCaller = {
+      async call() {
+        throw new Error("llm down");
+      },
+    };
+
+    const runner = createAgentLoopRunner({
+      sessionId: "sess_fail",
+      tools: [],
+      llmCaller: failingCaller,
+      enableBackgroundReview: false,
+    });
+
+    await expect(async () => {
+      for await (const _ev of runner.run("go")) {
+        // no-op
+      }
+    }).rejects.toThrow("llm down");
   });
 });

@@ -16,6 +16,8 @@ import type {
 
 export type { Tool } from "../types/index.ts";
 import { ok, err } from "../types/index.ts";
+import { hookRegistry } from "./hook-system.ts";
+import { classifyToolError } from "./errors.ts";
 
 // =============================================================================
 // Fail-Closed Defaults (Claude Code pattern)
@@ -29,8 +31,8 @@ export interface ToolBuildOptions<Input, Output, Progress> {
   /** Defaults to false (fail-closed). */
   isReadOnly?: boolean;
 
-  /** Defaults to false (fail-closed). */
-  isConcurrencySafe?: boolean;
+  /** Defaults to false (fail-closed). Can be a static boolean or a function of the parsed input. */
+  isConcurrencySafe?: boolean | ((input: Input) => boolean);
 
   /** Optional custom permission check. Defaults to allow. */
   checkPermissions?: (
@@ -45,12 +47,15 @@ export interface ToolBuildOptions<Input, Output, Progress> {
 export function buildTool<Input, Output = unknown, Progress = unknown>(
   opts: ToolBuildOptions<Input, Output, Progress>
 ): Tool<Input, Output, Progress> {
+  const concurrencySafe = opts.isConcurrencySafe ?? false;
   return {
     name: opts.name,
     description: opts.description,
     inputSchema: opts.inputSchema,
     isReadOnly: opts.isReadOnly ?? false,
-    isConcurrencySafe: opts.isConcurrencySafe ?? false,
+    isConcurrencySafe: typeof concurrencySafe === "function"
+      ? (concurrencySafe as (input: unknown) => boolean)
+      : () => concurrencySafe,
     checkPermissions: opts.checkPermissions ?? (() => ok("allow")),
     call: opts.call,
   };
@@ -114,6 +119,8 @@ export function assembleToolPool(
 // Streaming Tool Executor
 // =============================================================================
 
+const MAX_TOOL_CONCURRENCY = 10;
+
 type TrackedTool = {
   id: string;
   tool: Tool<unknown, unknown, unknown>;
@@ -121,10 +128,19 @@ type TrackedTool = {
   status: "queued" | "executing" | "completed" | "yielded";
   result?: Result<unknown>;
   error?: Error;
+  errorClass?: string;
+  parsedInput?: unknown;
+};
+
+type Batch = {
+  isConcurrencySafe: boolean;
+  tools: TrackedTool[];
 };
 
 export interface StreamingToolExecutorOptions {
   onToolError?: (tracked: TrackedTool, error: Error) => Promise<{ retry: boolean } | void>;
+  sessionId?: string;
+  turn?: number;
 }
 
 export class StreamingToolExecutor {
@@ -144,15 +160,29 @@ export class StreamingToolExecutor {
   async executeAll(): Promise<Map<string, Result<unknown>>> {
     const results = new Map<string, Result<unknown>>();
 
-    while (this.queue.some((t) => t.status !== "yielded")) {
-      const next = this.findNextExecutable();
-      if (!next) {
-        // Wait for at least one active task to complete
-        await this.waitForActiveCompletion();
-        continue;
+    // Parse inputs and partition into batches
+    const batches = this.partitionBatches();
+
+    for (const batch of batches) {
+      await hookRegistry.emit("tool:batchStart", {
+        sessionId: this.opts.sessionId,
+        turn: this.opts.turn,
+        toolNames: batch.tools.map((t) => t.tool.name),
+        isConcurrencySafe: batch.isConcurrencySafe,
+      });
+
+      if (batch.isConcurrencySafe) {
+        await this.runBatchConcurrently(batch.tools);
+      } else {
+        await this.runBatchSerially(batch.tools);
       }
 
-      this.runTool(next);
+      await hookRegistry.emit("tool:batchEnd", {
+        sessionId: this.opts.sessionId,
+        turn: this.opts.turn,
+        toolNames: batch.tools.map((t) => t.tool.name),
+        isConcurrencySafe: batch.isConcurrencySafe,
+      });
     }
 
     for (const t of this.queue) {
@@ -171,13 +201,69 @@ export class StreamingToolExecutor {
     return results;
   }
 
-  private findNextExecutable(): TrackedTool | undefined {
-    const hasExecutingWrite = this.queue.some(
-      (t) => t.status === "executing" && !t.tool.isConcurrencySafe
-    );
-    if (hasExecutingWrite) return undefined;
+  private partitionBatches(): Batch[] {
+    return this.queue.reduce<Batch[]>((acc, tracked) => {
+      const parsed = tracked.tool.inputSchema.safeParse(tracked.input);
+      tracked.parsedInput = parsed.success ? parsed.data : undefined;
 
-    return this.queue.find((t) => t.status === "queued");
+      const isSafe = parsed.success
+        ? (() => {
+            try {
+              return typeof tracked.tool.isConcurrencySafe === "function"
+              ? Boolean(tracked.tool.isConcurrencySafe(parsed.data))
+              : Boolean(tracked.tool.isConcurrencySafe);
+            } catch {
+              return false;
+            }
+          })()
+        : false;
+
+      if (isSafe && acc.length > 0 && acc[acc.length - 1]!.isConcurrencySafe) {
+        acc[acc.length - 1]!.tools.push(tracked);
+      } else {
+        acc.push({ isConcurrencySafe: isSafe, tools: [tracked] });
+      }
+      return acc;
+    }, []);
+  }
+
+  private async runBatchSerially(tools: TrackedTool[]): Promise<void> {
+    for (const tracked of tools) {
+      if (this.siblingAbortController.signal.aborted) {
+        tracked.status = "completed";
+        tracked.result = err({
+          code: "TOOL_CANCELLED",
+          message: "Cancelled due to sibling error",
+        });
+        continue;
+      }
+      await this.runTool(tracked);
+    }
+  }
+
+  private async runBatchConcurrently(tools: TrackedTool[]): Promise<void> {
+    const running: Promise<void>[] = [];
+    for (const tracked of tools) {
+      if (this.siblingAbortController.signal.aborted) {
+        tracked.status = "completed";
+        tracked.result = err({
+          code: "TOOL_CANCELLED",
+          message: "Cancelled due to sibling error",
+        });
+        continue;
+      }
+      const p = this.runTool(tracked);
+      running.push(p);
+      if (running.length >= MAX_TOOL_CONCURRENCY) {
+        await Promise.race(running);
+        // Clean up completed promises to keep memory bounded
+        for (let i = running.length - 1; i >= 0; i--) {
+          const reflect = await Promise.resolve(running[i]!).then(() => true, () => true);
+          if (reflect) running.splice(i, 1);
+        }
+      }
+    }
+    await Promise.all(running);
   }
 
   private async runTool(tracked: TrackedTool): Promise<void> {
@@ -199,22 +285,33 @@ export class StreamingToolExecutor {
     while (attempts < maxAttempts) {
       attempts++;
       try {
-        // Create a child abort signal bound to both parent and sibling controllers
         const childController = new AbortController();
         const onAbort = () => childController.abort();
         this.ctx.abortSignal.addEventListener("abort", onAbort, { once: true });
         this.siblingAbortController.signal.addEventListener("abort", onAbort, { once: true });
 
-        const childCtx: ToolCallContext<unknown> = {
+        const progressCtx: ToolCallContext<unknown> = {
           ...this.ctx,
           abortSignal: childController.signal,
+          reportProgress: (p) => {
+            void hookRegistry.emit("tool:progress", {
+              sessionId: this.opts.sessionId,
+              turn: this.opts.turn,
+              toolName: tracked.tool.name,
+              progress: p,
+            });
+            this.ctx.reportProgress(p);
+          },
         };
 
         const TOOL_TIMEOUT_MS = 30000;
         const output = await Promise.race([
-          tracked.tool.call(tracked.input, childCtx),
+          tracked.tool.call(tracked.input, progressCtx),
           new Promise<never>((_, reject) => {
-            const t = setTimeout(() => reject(new Error("TOOL_TIMEOUT: tool execution exceeded 30s")), TOOL_TIMEOUT_MS);
+            const t = setTimeout(
+              () => reject(new Error("TOOL_TIMEOUT: tool execution exceeded 30s")),
+              TOOL_TIMEOUT_MS
+            );
             childController.signal.addEventListener("abort", () => clearTimeout(t), { once: true });
           }),
         ]);
@@ -222,18 +319,26 @@ export class StreamingToolExecutor {
         break;
       } catch (e) {
         const error = e as Error;
+        tracked.errorClass = classifyToolError(error);
         if (attempts < maxAttempts && this.opts.onToolError) {
           const decision = await this.opts.onToolError(tracked, error);
           if (decision?.retry) {
             continue;
           }
         }
-        // Bash-like cascade cancellation: if a write tool fails, abort siblings
-        if (!tracked.tool.isReadOnly) {
+        // Cascade cancellation: write tools or shell/bash tools trigger sibling abort
+        const shouldCascade =
+          !tracked.tool.isReadOnly ||
+          tracked.tool.name.toLowerCase().startsWith("bash") ||
+          tracked.tool.name.toLowerCase() === "shell";
+        if (shouldCascade) {
           this.siblingAbortController.abort("sibling_error");
         }
         if (this.siblingAbortController.signal.aborted && tracked.tool.isReadOnly) {
-          tracked.result = err({ code: "TOOL_CANCELLED", message: "Cancelled due to sibling error" });
+          tracked.result = err({
+            code: "TOOL_CANCELLED",
+            message: "Cancelled due to sibling error",
+          });
         } else {
           tracked.error = error;
         }
@@ -247,17 +352,5 @@ export class StreamingToolExecutor {
     }
   }
 
-  private async waitForActiveCompletion(): Promise<void> {
-    const initialActive = this.activeCount;
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        if (this.activeCount < initialActive || this.activeCount === 0) {
-          resolve();
-        } else {
-          setTimeout(check, 10);
-        }
-      };
-      check();
-    });
-  }
+
 }

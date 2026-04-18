@@ -4,15 +4,19 @@
  * Manages AgentLoopRunner instances per session for the web backend.
  */
 
-import { createToolPool, type Tool } from "../core/tool-framework.ts";
+import { createToolPool, type Tool, type ToolPool } from "../core/tool-framework.ts";
 import { appConfig } from "../core/config.ts";
 import { logger } from "../core/logger.ts";
-import { notificationBus } from "../core/notification-bus.ts";
+import { notificationBus } from "../skills/notification/index.ts";
+import { CONFIRM_TIMEOUT_MS } from "./routes/constants.ts";
 import {
   compressTrajectoryTool,
   discoverSkillsTool,
   writeSkillTool,
   readSkillTool,
+  listSkillVersionsTool,
+  restoreSkillVersionTool,
+  pruneSkillVersionsTool,
 } from "../skills/learning/index.ts";
 import { selfModifyTool, ruleEngineOverrideTool } from "../skills/self-modify/index.ts";
 import { agentLoopTool, createAgentLoopRunner } from "../skills/agent-loop/index.ts";
@@ -26,6 +30,7 @@ import { multiAgentOrchestratorTool } from "../skills/multi-agent/index.ts";
 import { createDelegateTaskTool } from "../skills/orchestrator/index.ts";
 import { runCrewTaskTool } from "../skills/crewai/index.ts";
 import { run_sop_workflow } from "../skills/sop/index.ts";
+import { webAgentTool } from "../skills/web-agent/index.ts";
 import { BrowserController, createBrowserTools } from "../skills/browser/index.ts";
 import { canvas_draw, canvas_export } from "../skills/canvas/index.ts";
 import { createGenerateSkillTool, loadSkillModule, extractToolsFromModule } from "../skills/skill-factory/index.ts";
@@ -36,8 +41,10 @@ import { join } from "path";
 import type { LLMConfig } from "../core/llm-router.ts";
 import type { AgentLoopRunner } from "../skills/agent-loop/index.ts";
 import type { BaseMessage, ContentBlock, ToolProgressEvent } from "../types/index.ts";
-import { createAutonomousEvolutionDaemon, AutonomousEvolutionDaemon } from "../skills/autonomous-evolution/index.ts";
+import { autonomousEvolutionLoop, type AutonomousState } from "../skills/autonomous-evolution/index.ts";
 import { KnowledgeBase } from "../skills/knowledge-base/index.ts";
+import { onToolsReloaded } from "../core/tool-registry.ts";
+import { initMcpTools } from "../tools/mcp-client/index.ts";
 
 // =============================================================================
 // Global Tool Pool (assembled once)
@@ -48,6 +55,9 @@ globalPool.register(compressTrajectoryTool);
 globalPool.register(discoverSkillsTool);
 globalPool.register(writeSkillTool);
 globalPool.register(readSkillTool);
+globalPool.register(listSkillVersionsTool);
+globalPool.register(restoreSkillVersionTool);
+globalPool.register(pruneSkillVersionsTool);
 globalPool.register(selfModifyTool);
 globalPool.register(ruleEngineOverrideTool);
 globalPool.register(agentLoopTool);
@@ -58,6 +68,7 @@ globalPool.register(mcpBridgeTool);
 globalPool.register(multiAgentOrchestratorTool);
 globalPool.register(runCrewTaskTool);
 globalPool.register(run_sop_workflow);
+globalPool.register(webAgentTool);
 const browserController = new BrowserController({ headless: true });
 // browser tools registered after llmCfg is defined below
 
@@ -94,16 +105,17 @@ globalPool.register(createDelegateTaskTool({
 globalPool.register(createGenerateSkillTool({
   getLLMConfig: () => llmCfg,
   getGlobalTools: () => globalPool.all(),
-  onToolsLoaded: (tools) => {
-    for (const tool of tools) {
-      if (globalPool.reload(tool.name, tool)) {
-        // already existed, reloaded
-      } else {
-        globalPool.register(tool);
-      }
-    }
-  },
+  onToolsLoaded: (tools) => reloadSkillTools(tools),
 }));
+
+onToolsReloaded((tools) => reloadSkillTools(tools));
+
+// Initialize MCP tools asynchronously (optional dependency, fail-open)
+initMcpTools((tool) => {
+  if (!globalPool.get(tool.name)) {
+    globalPool.register(tool);
+  }
+}).catch(() => {});
 
 // =============================================================================
 // Confirm Deferred Map
@@ -133,10 +145,19 @@ export const confirmRequestHandlers = new Map<string, (toolName: string, input: 
 // =============================================================================
 
 const runners = new Map<string, AgentLoopRunner>();
+const runnerPools = new Map<string, ToolPool>();
 const runnerLastUsed = new Map<string, number>();
 let maxRunners = 50;
 let runnerIdleTimeoutMs = 30 * 60 * 1000;
 let idleCleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+function createSessionPool(): ToolPool {
+  const pool = createToolPool();
+  for (const tool of globalPool.all()) {
+    pool.register(tool);
+  }
+  return pool;
+}
 
 export function reloadSkillTools(skillTools: Tool<unknown, unknown, unknown>[]): number {
   let reloaded = 0;
@@ -146,6 +167,14 @@ export function reloadSkillTools(skillTools: Tool<unknown, unknown, unknown>[]):
     } else {
       globalPool.register(tool);
       reloaded++;
+    }
+    // Also propagate to active session pools
+    for (const pool of runnerPools.values()) {
+      if (pool.reload(tool.name, tool)) {
+        // already existed, reloaded
+      } else {
+        pool.register(tool);
+      }
     }
   }
   return reloaded;
@@ -177,6 +206,7 @@ export function getOrCreateRunner(sessionId: string): AgentLoopRunner {
     }
     if (lruKey) {
       runners.delete(lruKey);
+      runnerPools.delete(lruKey);
       confirmMap.delete(lruKey);
       confirmRequestHandlers.delete(lruKey);
       runnerLastUsed.delete(lruKey);
@@ -185,10 +215,12 @@ export function getOrCreateRunner(sessionId: string): AgentLoopRunner {
 
   const skills = discoverSkills();
   const skillPrompts = skills.map((s) => `${s.name}: ${s.frontmatter.description}`);
+  const sessionPool = createSessionPool();
+  runnerPools.set(sessionId, sessionPool);
 
   const runner = createAgentLoopRunner({
     sessionId,
-    tools: globalPool.all(),
+    tools: sessionPool.all(),
     llm: llmCfg,
     mode: "orchestrator",
     enableBackgroundReview: !!llmCfg,
@@ -208,7 +240,7 @@ export function getOrCreateRunner(sessionId: string): AgentLoopRunner {
       const timeout = setTimeout(() => {
         deferred.resolve(false);
         confirmMap.delete(sessionId);
-      }, 60_000);
+      }, CONFIRM_TIMEOUT_MS);
       const result = await deferred.promise;
       clearTimeout(timeout);
       confirmMap.delete(sessionId);
@@ -239,6 +271,7 @@ export function removeRunner(sessionId: string): boolean {
   confirmMap.delete(sessionId);
   confirmRequestHandlers.delete(sessionId);
   runnerLastUsed.delete(sessionId);
+  runnerPools.delete(sessionId);
   return runners.delete(sessionId);
 }
 
@@ -300,50 +333,22 @@ export function stopRunnerIdleCleanup(): void {
 // Autonomous Evolution Daemon
 // =============================================================================
 
-let daemonInstance: ReturnType<typeof createAutonomousEvolutionDaemon> | null = null;
-
-export function getDaemonStatus(): { running: boolean; stats?: ReturnType<AutonomousEvolutionDaemon["getStats"]> } {
+export function getDaemonStatus(): { running: boolean; state?: AutonomousState } {
   return {
-    running: daemonInstance !== null,
-    stats: daemonInstance?.getStats(),
+    running: autonomousEvolutionLoop.isRunning(),
+    state: autonomousEvolutionLoop.getState(),
   };
 }
 
-export function getDaemonHistory(): ReturnType<AutonomousEvolutionDaemon["getDecisionHistory"]> {
-  return daemonInstance?.getDecisionHistory() ?? [];
-}
-
 export function startDaemon(): boolean {
-  if (daemonInstance) return false;
-  daemonInstance = createAutonomousEvolutionDaemon({
-    intervalMs: 30000,
-    llmCfg,
-    autoApplyLowRisk: true,
-    selfReviewEveryNTicks: 10,
-    onDecision: (d) => {
-      logger.info("Daemon decision", { action: d.action, applied: d.applied, reason: d.reason, sessionId: d.sessionId });
-      if ((d.action === "create" || d.action === "self_patch") && d.applied) {
-        notificationBus.emitEvent({
-          type: d.action === "self_patch" ? "daemon_decision" : "skill_learned",
-          title: d.action === "self_patch" ? "Daemon 自我改进" : "新技能已学习",
-          message: d.skillName ? `Daemon 创建技能: ${d.skillName}` : d.reason,
-          timestamp: Date.now(),
-          meta: { sessionId: d.sessionId, skillName: d.skillName, action: d.action },
-        });
-      }
-    },
-    onError: (e) => {
-      logger.error("Daemon error", { message: e.message });
-    },
-  });
-  daemonInstance.start();
+  if (autonomousEvolutionLoop.isRunning()) return false;
+  autonomousEvolutionLoop.start();
   return true;
 }
 
 export function stopDaemon(): boolean {
-  if (!daemonInstance) return false;
-  daemonInstance.stop();
-  daemonInstance = null;
+  if (!autonomousEvolutionLoop.isRunning()) return false;
+  autonomousEvolutionLoop.stop();
   return true;
 }
 
@@ -382,10 +387,15 @@ export function getRunnerPoolStats(): { size: number; maxRunners: number; idleTi
 
 export function resetRunnerPool(): void {
   runners.clear();
+  runnerPools.clear();
   confirmMap.clear();
   confirmRequestHandlers.clear();
   runnerLastUsed.clear();
   stopRunnerIdleCleanup();
+}
+
+export function getSessionToolCount(sessionId: string): number {
+  return runnerPools.get(sessionId)?.all().length ?? 0;
 }
 
 export { llmCfg, globalPool, discoverSkills, listSessions, getMessages, installSkillTool };

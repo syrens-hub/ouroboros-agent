@@ -65,7 +65,7 @@ export interface Tool<Input, Output = unknown, Progress = unknown> {
   readonly isReadOnly: boolean;
 
   /** Whether multiple invocations of this tool can run concurrently safely. */
-  readonly isConcurrencySafe: boolean;
+  readonly isConcurrencySafe: boolean | ((input: unknown) => boolean);
 
   /** Custom permission check beyond rule matching. */
   checkPermissions(input: Input, ctx: ToolPermissionContext): Result<ToolPermissionLevel>;
@@ -151,10 +151,10 @@ export type AgentLoopStatus = z.infer<typeof AgentLoopStatusSchema>;
 
 export interface AgentLoopState {
   readonly sessionId: string;
-  readonly messages: BaseMessage[];
+  messages: BaseMessage[];
   status: AgentLoopStatus;
   readonly activeTaskIds: TaskId[];
-  readonly loadedSkills: SkillName[];
+  loadedSkills: SkillName[];
   turnCount: number;
   readonly maxTurns: number;
   contextBudget?: number;

@@ -5,13 +5,15 @@
 import { z } from "zod";
 import { buildTool } from "../core/tool-framework.ts";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { dirname, resolve } from "path";
+import { dirname, resolve, relative } from "path";
+import { sanitizeFileContentForPrompt } from "../core/prompt-defense.ts";
 
 const PROJECT_ROOT = resolve(process.cwd());
 
 function resolveAndGuard(inputPath: string): string {
-  const full = resolve(inputPath);
-  if (!full.startsWith(PROJECT_ROOT)) {
+  const full = resolve(PROJECT_ROOT, inputPath);
+  const rel = relative(PROJECT_ROOT, full);
+  if (rel.startsWith("..") || rel === "") {
     throw new Error("Path traversal detected: access outside project root is not allowed.");
   }
   return full;
@@ -26,7 +28,8 @@ export const readFileTool = buildTool({
   async call({ path }) {
     const safePath = resolveAndGuard(path);
     if (!existsSync(safePath)) return { content: null, exists: false };
-    return { content: readFileSync(safePath, "utf-8"), exists: true };
+    const raw = readFileSync(safePath, "utf-8");
+    return { content: sanitizeFileContentForPrompt(raw, path), exists: true };
   },
 });
 

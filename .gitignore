@@ -4,6 +4,7 @@ node_modules/
 
 # Environment variables (keep example template only)
 .env
+.env.backup
 .env.local
 .env.*.local
 .env.development
@@ -30,6 +31,11 @@ coverage/
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Ouroboros runtime files (overrides above patterns)
+.ouroboros/*.db*
+.ouroboros/vitest-*
+.ouroboros/index-*.ts
 
 # Logs
 logs/

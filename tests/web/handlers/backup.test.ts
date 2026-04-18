@@ -13,27 +13,27 @@ const mockRestoreBackup = vi.fn();
 const mockGracefulShutdown = vi.fn();
 
 vi.mock("../../../web/routes/shared.ts", () => ({
-  json: (...args: any[]) => mockJson(...args),
-  readBody: (...args: any[]) => mockReadBody(...args),
-  parseBody: (...args: any[]) => mockParseBody(...args),
+  json: (...args: unknown[]) => mockJson(...args),
+  readBody: (...args: unknown[]) => mockReadBody(...args),
+  parseBody: (...args: unknown[]) => mockParseBody(...args),
   RestoreBackupBodySchema: {},
   ReqContext: {},
   OUT_PATH: "/tmp/out.jsonl",
-  exportTrajectories: (...args: any[]) => mockExportTrajectories(...args),
+  exportTrajectories: (...args: unknown[]) => mockExportTrajectories(...args),
 }));
 
-vi.mock("../../../core/backup.ts", () => ({
-  createBackup: (...args: any[]) => mockCreateBackup(...args),
-  listBackups: (...args: any[]) => mockListBackups(...args),
-  restoreBackup: (...args: any[]) => mockRestoreBackup(...args),
+vi.mock("../../../skills/backup/index.ts", () => ({
+  createBackup: (...args: unknown[]) => mockCreateBackup(...args),
+  listBackups: (...args: unknown[]) => mockListBackups(...args),
+  restoreBackup: (...args: unknown[]) => mockRestoreBackup(...args),
 }));
 
-vi.mock("../../../web/server.ts", () => ({
-  gracefulShutdown: (...args: any[]) => mockGracefulShutdown(...args),
+vi.mock("../../../web/shutdown.ts", () => ({
+  gracefulShutdown: (...args: unknown[]) => mockGracefulShutdown(...args),
 }));
 
-let mockExistsSync = (p: string) => p === "/tmp/out.jsonl";
-let mockReadFileSync = (p: string) => "backup-data";
+let mockExistsSync: (p: string) => boolean = (p) => p === "/tmp/out.jsonl";
+const mockReadFileSync: (p: string) => string = () => "backup-data";
 
 vi.mock("fs", () => ({
   existsSync: (p: string) => mockExistsSync(p),
@@ -188,7 +188,7 @@ describe("handleBackup", () => {
       expect.any(Object)
     );
     vi.runAllTimers();
-    expect(mockGracefulShutdown).toHaveBeenCalledWith("RESTORE", 0);
+    expect(mockGracefulShutdown).toHaveBeenCalledWith(null, "RESTORE", 0);
     vi.useRealTimers();
   });
 

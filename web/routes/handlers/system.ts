@@ -1,21 +1,25 @@
-import { existsSync } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
 import { join } from "path";
 import { listSessions, getMemoryRecalls24h } from "../../../core/session-db.ts";
 import { getLLMMetrics } from "../../../core/llm-metrics.ts";
 import { getGlobalTokenUsage, getTokenUsageTimeSeries } from "../../../core/repositories/token-usage.ts";
 import { getRunnerPoolStats, llmCfg, discoverSkills, getDaemonStatus } from "../../runner-pool.ts";
+import { getSkillDiscoveryStats } from "../../../skills/learning/index.ts";
+import { getCircuitBreakerStates } from "../../../core/llm-resilience.ts";
 import { getWsClientCount, getWsConnectionsTotal } from "../../ws-server.ts";
 import { feishuPlugin } from "../../../extensions/im/feishu/index.ts";
 import { mockChatPlugin } from "../../../extensions/im/mock-chat/index.ts";
+import { getDb } from "../../../core/db-manager.ts";
+import { migrations } from "../../../core/migrations/index.ts";
+import { getBudgetStatus } from "../../../skills/budget-guard/index.ts";
 import {
   json,
   getHealthStatus,
   getPrometheusMetrics,
   ReqContext,
-  DB_PATH,
   taskScheduler,
 } from "../shared.ts";
+import { getOtelStatus } from "../../../skills/telemetry/otel.ts";
 
 export async function handleSystem(
   req: IncomingMessage,
@@ -31,13 +35,57 @@ export async function handleSystem(
     return true;
   }
   if (path === "/api/ready" && method === "GET") {
-    json(res, 200, { status: "ready", db: existsSync(DB_PATH), llmConfigured: !!llmCfg }, ctx);
+    const readyChecks: Record<string, { ok: boolean; detail?: string }> = {};
+    let ready = true;
+
+    // Real DB query check
+    try {
+      getDb().prepare("SELECT 1").get();
+      readyChecks.db = { ok: true };
+    } catch (e) {
+      readyChecks.db = { ok: false, detail: String(e) };
+      ready = false;
+    }
+
+    // Migration completeness check
+    try {
+      const db = getDb();
+      const row = db.prepare("SELECT COUNT(*) as count FROM umzug_migrations").get() as { count: number } | undefined;
+      const expected = migrations.length;
+      const actual = row?.count ?? 0;
+      if (actual === expected) {
+        readyChecks.migrations = { ok: true, detail: `${actual}/${expected}` };
+      } else {
+        readyChecks.migrations = { ok: false, detail: `${actual}/${expected} migrations applied` };
+        ready = false;
+      }
+    } catch (e) {
+      readyChecks.migrations = { ok: false, detail: String(e) };
+      ready = false;
+    }
+
+    readyChecks.llm = { ok: !!llmCfg, detail: llmCfg ? `${llmCfg.provider}:${llmCfg.model}` : "not configured" };
+
+    json(res, ready ? 200 : 503, { status: ready ? "ready" : "not_ready", checks: readyChecks }, ctx);
     return true;
   }
   if (path === "/api/metrics" && method === "GET") {
-    const body = getPrometheusMetrics();
+    const body = await getPrometheusMetrics();
     res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4; charset=utf-8", "X-Request-ID": ctx.requestId });
     res.end(body);
+    return true;
+  }
+
+  // System health with MCP included
+  if (path === "/api/system/health" && method === "GET") {
+    const health = await getHealthStatus();
+    json(res, health.healthy ? 200 : 503, health, ctx);
+    return true;
+  }
+
+  // OpenTelemetry trace exporter status
+  if (path === "/api/traces/status" && method === "GET") {
+    json(res, 200, { success: true, data: getOtelStatus() }, ctx);
     return true;
   }
 
@@ -104,17 +152,29 @@ export async function handleSystem(
     } catch {
       // file does not exist yet
     }
+    const discoveryStats = getSkillDiscoveryStats();
     const data = {
       llmProvider: llmCfg?.provider || "local",
       llmModel: llmCfg?.model || "mock",
       sessionCount: sessions.length,
       skillCount: skills.length,
+      lastSkillScanAt: discoveryStats.lastScanAt || null,
       daemonRunning: getDaemonStatus().running,
       imPlugins,
       memoryRecalls24h: memoryRecallsRes.success ? memoryRecallsRes.data : 0,
       deepDreamingLastRun,
     };
     json(res, 200, { success: true, data }, ctx);
+    return true;
+  }
+
+  if (path === "/api/system/circuit-breakers" && method === "GET") {
+    json(res, 200, { success: true, data: getCircuitBreakerStates() }, ctx);
+    return true;
+  }
+
+  if (path === "/api/budget" && method === "GET") {
+    json(res, 200, { success: true, data: getBudgetStatus() }, ctx);
     return true;
   }
 

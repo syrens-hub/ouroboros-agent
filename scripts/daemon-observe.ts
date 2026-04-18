@@ -11,7 +11,7 @@
  *   4. Watch the daemon review sessions and propose skills in real-time
  */
 
-import { createAutonomousEvolutionDaemon } from "../skills/autonomous-evolution/index.ts";
+import { autonomousEvolutionLoop } from "../skills/autonomous-evolution/index.ts";
 import { createSession, appendMessage } from "../core/session-db.ts";
 
 async function main() {
@@ -24,29 +24,8 @@ async function main() {
   const hasLLM = !!(process.env.LLM_API_KEY && process.env.LLM_PROVIDER);
   console.log(`LLM Mode: ${hasLLM ? `${process.env.LLM_PROVIDER} / ${process.env.LLM_MODEL || "unknown"}` : "MOCK (set LLM_API_KEY for real brain)"}\n`);
 
-  const daemon = createAutonomousEvolutionDaemon({
-    intervalMs: 15000, // faster tick for demo observation
-    autoApplyLowRisk: true,
-    selfReviewEveryNTicks: 4,
-    onDecision: (d) => {
-      const ts = new Date().toISOString();
-      console.log(`\n[${ts}] Decision: ${d.action.toUpperCase()}`);
-      console.log(`  Session : ${d.sessionId}`);
-      console.log(`  Skill   : ${d.skillName || "(none)"}`);
-      console.log(`  Applied : ${d.applied}`);
-      console.log(`  Reason  : ${d.reason}`);
-      if (d.markdown) {
-        console.log(`  Markdown preview:`);
-        console.log(d.markdown.split("\n").slice(0, 6).join("\n"));
-        console.log("  ...");
-      }
-    },
-    onError: (e) => {
-      console.error("\n[Daemon Error]", e.message);
-    },
-  });
-
-  daemon.start();
+  autonomousEvolutionLoop.start();
+  console.log("Autonomous evolution loop started. Press Ctrl+C to stop.\n");
   console.log("Daemon started. Press Ctrl+C to stop.\n");
 
   // Seed a demo session so there's something to review immediately
@@ -64,15 +43,15 @@ async function main() {
 
   // Live stats loop
   const statsInterval = setInterval(() => {
-    const stats = daemon.getStats();
-    process.stdout.write(`\r[Ticks: ${stats.tickCount} | Reviewed: ${stats.reviewedSessions} | History: ${stats.historySize}] `);
+    const state = autonomousEvolutionLoop.getState();
+    process.stdout.write(`\r[Cycles: ${state.totalCycles} | Proposals: ${state.totalProposals} | Executed: ${state.totalExecuted} | Status: ${state.status}] `);
   }, 5000);
 
   process.on("SIGINT", () => {
-    console.log("\n\nStopping daemon...");
+    console.log("\n\nStopping autonomous loop...");
     clearInterval(statsInterval);
-    daemon.stop();
-    console.log("Final stats:", daemon.getStats());
+    autonomousEvolutionLoop.stop();
+    console.log("Final state:", autonomousEvolutionLoop.getState());
     console.log("Goodbye.\n");
     process.exit(0);
   });

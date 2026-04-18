@@ -136,10 +136,16 @@ export class ToolRateLimiter {
     const cutoff = now - windowMs;
     let timestamps = this.windows.get(key) ?? [];
     timestamps = timestamps.filter((t) => t > cutoff);
+    // Memory leak fix: delete the Map entry when the window is empty so keys
+    // accumulate indefinitely only when the slot is actively in use.
+    if (timestamps.length === 0) {
+      this.windows.delete(key);
+    } else {
+      this.windows.set(key, timestamps);
+    }
 
     if (timestamps.length >= maxCalls) {
       const retryAfter = Math.ceil((timestamps[0] + windowMs - now) / 1000);
-      this.windows.set(key, timestamps);
       return { allowed: false, remaining: 0, retryAfter: Math.max(0, retryAfter) };
     }
 

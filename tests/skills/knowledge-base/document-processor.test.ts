@@ -48,15 +48,15 @@ describe("DocumentProcessor", () => {
     expect(h1.length).toBe(16);
   });
 
-  it("extractText reads files and flattens JSON", () => {
+  it("extractText reads files and flattens JSON", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ouroboros-kb-"));
     const txtPath = join(dir, "a.txt");
     const jsonPath = join(dir, "b.json");
     writeFileSync(txtPath, "plain text");
     writeFileSync(jsonPath, JSON.stringify({ key: "value" }));
 
-    expect(extractText(txtPath)).toBe("plain text");
-    expect(extractText(jsonPath)).toContain('"key": "value"');
+    expect(await extractText(txtPath)).toBe("plain text");
+    expect(await extractText(jsonPath)).toContain('"key": "value"');
 
     rmSync(dir, { recursive: true });
   });

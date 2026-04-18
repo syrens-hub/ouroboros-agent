@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ouroboros-agent.fullname" . }}
+  labels:
+    {{- include "ouroboros-agent.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ouroboros-agent.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ouroboros-agent.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: ouroboros-agent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.web.port }}
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: LLM_PROVIDER
+              value: {{ .Values.config.llm.provider | quote }}
+            - name: LLM_MODEL
+              value: {{ .Values.config.llm.model | quote }}
+            - name: LLM_BASE_URL
+              value: {{ .Values.config.llm.baseUrl | quote }}
+            - name: LLM_TEMPERATURE
+              value: {{ .Values.config.llm.temperature | quote }}
+            - name: LLM_MAX_TOKENS
+              value: {{ .Values.config.llm.maxTokens | quote }}
+            - name: FALLBACK_LLM_PROVIDER
+              value: {{ .Values.config.fallbackLlm.provider | quote }}
+            - name: FALLBACK_LLM_MODEL
+              value: {{ .Values.config.fallbackLlm.model | quote }}
+            - name: FALLBACK_LLM_BASE_URL
+              value: {{ .Values.config.fallbackLlm.baseUrl | quote }}
+            - name: USE_POSTGRES
+              value: {{ .Values.config.db.usePostgres | quote }}
+            - name: OUROBOROS_DB_DIR
+              value: {{ .Values.config.db.dir | quote }}
+            - name: SLOW_QUERY_THRESHOLD_MS
+              value: {{ .Values.config.db.slowQueryThresholdMs | quote }}
+            - name: OUROBOROS_WEB_PORT
+              value: {{ .Values.config.web.port | quote }}
+            - name: WEB_ALLOWED_ORIGINS
+              value: {{ .Values.config.web.allowedOrigins | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.config.log.level | quote }}
+            - name: LOG_FORMAT
+              value: {{ .Values.config.log.format | quote }}
+            - name: REDIS_URL
+              value: {{ .Values.config.redis.url | quote }}
+            - name: SENTRY_DSN
+              value: {{ .Values.config.sentry.dsn | quote }}
+            - name: SENTRY_ENVIRONMENT
+              value: {{ .Values.config.sentry.environment | quote }}
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.secrets.existingSecret }}{{ .Values.secrets.existingSecret }}{{ else }}{{ include "ouroboros-agent.fullname" . }}-secrets{{ end }}
+                  key: LLM_API_KEY
+                  optional: true
+            - name: FALLBACK_LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.secrets.existingSecret }}{{ .Values.secrets.existingSecret }}{{ else }}{{ include "ouroboros-agent.fullname" . }}-secrets{{ end }}
+                  key: FALLBACK_LLM_API_KEY
+                  optional: true
+            - name: WEB_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.secrets.existingSecret }}{{ .Values.secrets.existingSecret }}{{ else }}{{ include "ouroboros-agent.fullname" . }}-secrets{{ end }}
+                  key: WEB_API_TOKEN
+                  optional: true
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.secrets.existingSecret }}{{ .Values.secrets.existingSecret }}{{ else }}{{ include "ouroboros-agent.fullname" . }}-secrets{{ end }}
+                  key: DATABASE_URL
+                  optional: true
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: {{ .Values.config.db.dir }}
+            {{- end }}
+      volumes:
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "ouroboros-agent.fullname" . }}-data
+        {{- end }}

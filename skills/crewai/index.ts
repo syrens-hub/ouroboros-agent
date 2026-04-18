@@ -367,3 +367,28 @@ export const runCrewTaskTool = buildTool({
     };
   },
 });
+
+export {
+  initCrewHistoryTables,
+  recordCrewRun,
+  recordCrewTask,
+  getCrewRunHistory,
+  getCrewRunTasks,
+  getCrewRunMetrics,
+  type CrewRunRecord,
+  type CrewTaskRecord,
+} from "./crew-history.ts";
+
+export {
+  runConsensus,
+  type AgentAnswer,
+  type ConsensusResult,
+} from "./consensus-engine.ts";
+
+export {
+  createHandoff,
+  applyHandoff,
+  serializeHandoff,
+  deserializeHandoff,
+  type HandoffContext,
+} from "./handoff.ts";

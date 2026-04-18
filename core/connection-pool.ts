@@ -1,3 +1,5 @@
+import { safeIgnore } from "./safe-utils.ts";
+
 type PoolEvent = "acquire" | "release" | "create" | "close" | "error";
 
 type PoolConfig = {
@@ -18,6 +20,11 @@ type PendingRequest<T> = {
   timer: ReturnType<typeof setTimeout>;
 };
 
+export type ConnectionPoolStats = {
+  activeConnections: number;
+  idleConnections: number;
+};
+
 export class ConnectionPool<T> {
   private factory: () => Promise<T>;
   private closer: (conn: T) => Promise<void> | void;
@@ -30,6 +37,7 @@ export class ConnectionPool<T> {
   private listeners: Map<PoolEvent, Set<(payload?: unknown) => void>> = new Map();
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private drained = false;
+  private _name?: string;
 
   constructor(
     factory: () => Promise<T>,
@@ -68,11 +76,7 @@ export class ConnectionPool<T> {
     const set = this.listeners.get(event);
     if (!set) return;
     for (const listener of set) {
-      try {
-        listener(payload);
-      } catch {
-        // ignore listener errors
-      }
+      safeIgnore(() => listener(payload), "connection-pool listener");
     }
   }
 
@@ -187,14 +191,10 @@ export class ConnectionPool<T> {
     this.idle = [];
     this.active.clear();
 
-    const closings = toClose.map((conn) =>
-      Promise.resolve()
-        .then(() => this.closer(conn))
-        .then(() => this.emit("close", conn))
-        .catch((err) => this.emit("error", err instanceof Error ? err : new Error(String(err)))),
-    );
-
-    await Promise.allSettled(closings);
+    // safeClose already handles errors internally via emit("error")
+    for (const conn of toClose) {
+      this.safeClose(conn);
+    }
   }
 
   private cleanupIdle(): void {
@@ -207,6 +207,13 @@ export class ConnectionPool<T> {
       const item = this.idle.shift()!;
       this.safeClose(item.conn);
     }
+  }
+
+  getStats(): ConnectionPoolStats {
+    return {
+      activeConnections: this.active.size,
+      idleConnections: this.idle.length,
+    };
   }
 
   private safeClose(conn: T): void {

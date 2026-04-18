@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from "fs";
+import { PAYLOAD_TOO_LARGE } from "../constants.ts";
 import type { IncomingMessage, ServerResponse } from "http";
-import { createBackup, listBackups, restoreBackup } from "../../../core/backup.ts";
-import { gracefulShutdown } from "../../server.ts";
+import { createBackup, listBackups, restoreBackup } from "../../../skills/backup/index.ts";
+import { gracefulShutdown } from "../../shutdown.ts";
 import {
   json,
   readBody,
@@ -60,7 +61,7 @@ export async function handleBackup(
     try {
       body = await readBody(req);
     } catch (e) {
-      if (e instanceof Error && e.message === "PAYLOAD_TOO_LARGE") {
+      if (e instanceof Error && e.message === PAYLOAD_TOO_LARGE) {
         json(res, 413, { success: false, error: { message: "Payload too large" } }, ctx);
         return true;
       }
@@ -75,7 +76,7 @@ export async function handleBackup(
     json(res, result.success ? 200 : 500, { success: result.success, error: result.error ? { message: result.error } : undefined }, ctx);
     if (result.success) {
       // Close server and exit so the orchestrator restarts with the restored database
-      setTimeout(() => gracefulShutdown("RESTORE", 0), 500);
+      setTimeout(() => gracefulShutdown(null, "RESTORE", 0), 500);
     }
     return true;
   }

@@ -5,6 +5,7 @@
  */
 
 import { getDb } from "../db-manager.ts";
+import { lastId, rowCount, rowsAs } from "../db-utils.ts";
 
 export interface MemoryLayerEntry {
   id: number;
@@ -53,7 +54,7 @@ export function queryMemoryLayers(opts: {
       ${limitClause}
     `;
 
-    const rows = db.prepare(sql).all(...params) as MemoryLayerEntry[];
+    const rows = rowsAs<MemoryLayerEntry>(db.prepare(sql).all(...params));
     return { success: true, data: rows };
   } catch (e) {
     return { success: false, error: String(e) };
@@ -75,9 +76,10 @@ export function searchMemoryLayers(opts: {
       ORDER BY score DESC, updated_at DESC
       LIMIT ?
     `;
-    const rows = db
+    const rawRows = db
       .prepare(sql)
-      .all(`%${opts.query}%`, `%${opts.query}%`, opts.sessionId || "", opts.limit ?? 10) as MemoryLayerEntry[];
+      .all(`%${opts.query}%`, `%${opts.query}%`, opts.sessionId || "", opts.limit ?? 10);
+    const rows = rowsAs<MemoryLayerEntry>(rawRows);
     return { success: true, data: rows };
   } catch (e) {
     return { success: false, error: String(e) };
@@ -93,7 +95,7 @@ export function insertMemoryLayer(
       `INSERT INTO memory_layers (session_id, layer, source_path, content, summary, score)
        VALUES (?, ?, ?, ?, ?, ?)`
     ).run(entry.session_id, entry.layer, entry.source_path, entry.content, entry.summary, entry.score);
-    return { success: true, id: Number((result as { lastInsertRowid: number | bigint }).lastInsertRowid) };
+    return { success: true, id: lastId(result) };
   } catch (e) {
     return { success: false, error: String(e) };
   }
@@ -132,7 +134,7 @@ export function updateMemoryLayer(
     const sql = `UPDATE memory_layers SET ${sets.join(", ")} WHERE id = ?`;
     params.push(id);
     const result = db.prepare(sql).run(...params);
-    return { success: true, changes: (result as { changes: number }).changes };
+    return { success: true, changes: rowCount(result) };
   } catch (e) {
     return { success: false, error: String(e) };
   }
@@ -142,7 +144,7 @@ export function deleteMemoryLayer(id: number): { success: true; changes: number 
   try {
     const db = getDb();
     const result = db.prepare("DELETE FROM memory_layers WHERE id = ?").run(id);
-    return { success: true, changes: (result as { changes: number }).changes };
+    return { success: true, changes: rowCount(result) };
   } catch (e) {
     return { success: false, error: String(e) };
   }
@@ -154,7 +156,7 @@ export function deleteMemoryLayersByIds(ids: number[]): { success: true; changes
     const db = getDb();
     const placeholders = ids.map(() => "?").join(", ");
     const result = db.prepare(`DELETE FROM memory_layers WHERE id IN (${placeholders})`).run(...ids);
-    return { success: true, changes: (result as { changes: number }).changes };
+    return { success: true, changes: rowCount(result) };
   } catch (e) {
     return { success: false, error: String(e) };
   }

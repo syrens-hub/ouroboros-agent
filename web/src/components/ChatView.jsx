@@ -24,6 +24,7 @@ import {
   Monitor,
   ChevronDown,
   ChevronUp,
+  GitBranch,
 } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import ReactMarkdown from 'react-markdown'
@@ -32,6 +33,19 @@ import { apiFetch, wsUrl } from '../api.js'
 import { compressImage } from '../utils/image.js'
 
 const CodeBlock = lazy(() => import('./CodeBlock'))
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]))
+}
+
+function isUrlSafe(url) {
+  try {
+    const u = new URL(url, window.location.href)
+    return ['http:', 'https:', 'blob:', 'data:'].includes(u.protocol)
+  } catch {
+    return false
+  }
+}
 
 function formatTime(ts) {
   if (!ts) return ''
@@ -175,11 +189,11 @@ function MessageContent({ msg, onImageClick }) {
   if (msg.role !== 'assistant') {
     return (
       <div className="whitespace-pre-wrap">
-        {textBlocks && <div className="whitespace-pre-wrap">{textBlocks}</div>}
+        {textBlocks && <div className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: escapeHtml(textBlocks) }} />}
         {imageBlocks.map((b, i) => (
           <img
             key={i}
-            src={b.image_url.url}
+            src={isUrlSafe(b.image_url.url) ? b.image_url.url : ''}
             alt="uploaded"
             className="mt-2 max-w-xs rounded-lg border border-white/10 cursor-zoom-in"
             onClick={() => onImageClick && onImageClick(b.image_url.url)}
@@ -205,12 +219,12 @@ function MessageContent({ msg, onImageClick }) {
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
-            img({ src, alt, ...props }) {
+            img({ src, alt, _node, ..._props }) {
+              if (!src || !isUrlSafe(src)) return <img src="" alt={alt || ''} />
               return (
                 <img
                   src={src}
-                  alt={alt}
-                  {...props}
+                  alt={alt || ''}
                   className="mt-2 max-w-xs rounded-lg border border-white/10 cursor-zoom-in"
                   onClick={() => onImageClick && onImageClick(src)}
                 />
@@ -228,6 +242,14 @@ function MessageContent({ msg, onImageClick }) {
                 </code>
               )
             },
+            a({ href, children, ...props }) {
+              const safeHref = typeof href === 'string' && !/^(javascript|data|vbscript):/i.test(href) ? href : '#'
+              return (
+                <a href={safeHref} {...props} target="_blank" rel="noopener noreferrer">
+                  {children}
+                </a>
+              )
+            },
           }}
         >
           {mainContent || textBlocks}
@@ -236,7 +258,7 @@ function MessageContent({ msg, onImageClick }) {
       {imageBlocks.map((b, i) => (
         <img
           key={i}
-          src={b.image_url.url}
+          src={isUrlSafe(b.image_url.url) ? b.image_url.url : ''}
           alt="uploaded"
           className="mt-2 max-w-xs rounded-lg border border-white/10 cursor-zoom-in"
           onClick={() => onImageClick && onImageClick(b.image_url.url)}
@@ -283,6 +305,9 @@ export function ChatView({ sessions, systemStatus }) {
   const [voiceContinuous, setVoiceContinuous] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState(null)
   const [ttsSpeakingId, setTtsSpeakingId] = useState(null)
+  const [traceDrawerOpen, setTraceDrawerOpen] = useState(false)
+  const [traceEvents, setTraceEvents] = useState([])
+  const [traceLoading, setTraceLoading] = useState(false)
   const bottomRef = useRef(null)
   const messagesContainerRef = useRef(null)
   const { connect, close, send } = useWebSocket()
@@ -606,6 +631,20 @@ export function ChatView({ sessions, systemStatus }) {
     [confirmModal, activeSessionId, send]
   )
 
+  const loadTraces = useCallback(async () => {
+    if (!activeSessionId) return
+    setTraceLoading(true)
+    try {
+      const res = await apiFetch(`/api/sessions/${activeSessionId}/traces`)
+      const data = await res.json()
+      if (data.success) setTraceEvents(data.data || [])
+    } catch {
+      setTraceEvents([])
+    } finally {
+      setTraceLoading(false)
+    }
+  }, [activeSessionId])
+
   const handleDragOver = useCallback((e) => {
     e.preventDefault()
   }, [])
@@ -828,23 +867,32 @@ export function ChatView({ sessions, systemStatus }) {
                 <span className="font-medium">{m.role === 'user' ? '你' : m.role === 'assistant' ? 'Ouroboros' : m.role === 'computer_use' ? 'Browser' : '工具'}</span>
                 <span>{formatTime(m.timestamp)}</span>
                 {m.role === 'assistant' && (
-                  <button
-                    onClick={() => {
-                      if (ttsSpeakingId === idx) {
-                        stopSpeaking()
-                      } else {
-                        const text = (typeof m.content === 'string' ? m.content : '')
-                          .replace(/\[Image:.*?\]/g, '')
-                          .replace(/!\[.*?\]\(.*?\)/g, '')
-                          .replace(/\[附件:.*?\]\(.*?\)/g, '')
-                        speakText(text.slice(0, 500), idx)
-                      }
-                    }}
-                    className={`ml-1 p-0.5 rounded transition ${ttsSpeakingId === idx ? 'text-accent animate-pulse' : 'hover:text-accent'}`}
-                    title="朗读"
-                  >
-                    <Volume2 className="w-3.5 h-3.5" />
-                  </button>
+                  <>
+                    <button
+                      onClick={() => {
+                        if (ttsSpeakingId === idx) {
+                          stopSpeaking()
+                        } else {
+                          const text = (typeof m.content === 'string' ? m.content : '')
+                            .replace(/\[Image:.*?\]/g, '')
+                            .replace(/!\[.*?\]\(.*?\)/g, '')
+                            .replace(/\[附件:.*?\]\(.*?\)/g, '')
+                          speakText(text.slice(0, 500), idx)
+                        }
+                      }}
+                      className={`ml-1 p-0.5 rounded transition ${ttsSpeakingId === idx ? 'text-accent animate-pulse' : 'hover:text-accent'}`}
+                      title="朗读"
+                    >
+                      <Volume2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => { setTraceDrawerOpen(true); loadTraces() }}
+                      className="ml-1 p-0.5 rounded transition hover:text-accent"
+                      title="思维链"
+                    >
+                      <GitBranch className="w-3.5 h-3.5" />
+                    </button>
+                  </>
                 )}
               </div>
               <MessageContent msg={m} onImageClick={setLightboxUrl} />
@@ -1050,6 +1098,62 @@ export function ChatView({ sessions, systemStatus }) {
                 允许
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trace Drawer */}
+      {traceDrawerOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setTraceDrawerOpen(false)} />
+          <div className="relative w-[28rem] max-w-full bg-card border-l border-border h-full overflow-y-auto p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-text-strong flex items-center gap-2">
+                <GitBranch className="w-4 h-4 text-accent" />
+                思维链
+              </h3>
+              <button onClick={() => setTraceDrawerOpen(false)} className="p-1 rounded hover:bg-secondary transition"><X className="w-4 h-4" /></button>
+            </div>
+            {traceLoading && <div className="text-xs text-muted">加载中...</div>}
+            {!traceLoading && traceEvents.length === 0 && <div className="text-xs text-muted">暂无 trace 记录</div>}
+            {!traceLoading && traceEvents.length > 0 && (
+              <div className="space-y-4">
+                {Object.entries(traceEvents.reduce((acc, ev) => {
+                  const k = `Turn ${ev.turn}`
+                  acc[k] = acc[k] || []
+                  acc[k].push(ev)
+                  return acc
+                }, {})).map(([turn, items]) => (
+                  <div key={turn} className="border border-border rounded-lg p-3">
+                    <div className="text-xs font-semibold text-accent mb-2">{turn}</div>
+                    <div className="space-y-2">
+                      {items.map((ev, i) => (
+                        <div key={i} className="text-xs space-y-1">
+                          <div className="flex items-center gap-2 text-muted">
+                            <span className="px-1.5 py-0.5 rounded bg-secondary text-white text-[10px]">{ev.type}</span>
+                            <span className="font-medium">{ev.actor}</span>
+                            <span className="ml-auto">{formatTime(ev.timestamp)}</span>
+                          </div>
+                          {ev.latencyMs != null && <div className="text-[10px] text-muted">latency: {ev.latencyMs}ms{ev.tokens != null ? ` · tokens: ${ev.tokens}` : ''}</div>}
+                          {ev.input != null && (
+                            <details className="rounded border border-white/5 bg-secondary/30">
+                              <summary className="cursor-pointer px-2 py-1 text-[10px] text-muted">input</summary>
+                              <pre className="px-2 pb-2 text-[10px] text-muted whitespace-pre-wrap">{typeof ev.input === 'string' ? ev.input : JSON.stringify(ev.input, null, 2)}</pre>
+                            </details>
+                          )}
+                          {ev.output != null && (
+                            <details className="rounded border border-white/5 bg-secondary/30">
+                              <summary className="cursor-pointer px-2 py-1 text-[10px] text-muted">output</summary>
+                              <pre className="px-2 pb-2 text-[10px] text-muted whitespace-pre-wrap">{typeof ev.output === 'string' ? ev.output : JSON.stringify(ev.output, null, 2)}</pre>
+                            </details>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

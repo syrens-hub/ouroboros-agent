@@ -28,8 +28,8 @@ export {
   createSandboxToolCallContext,
   createChildAbortController,
   generateTaskId,
-} from "./sandbox.ts";
-export type { SandboxContext } from "./sandbox.ts";
+} from "../skills/sandbox/index.ts";
+export type { SandboxContext } from "../skills/sandbox/index.ts";
 
 export { streamLLM, callLLM } from "./llm-router.ts";
 export type { LLMConfig, LLMStreamChunk, LLMProvider } from "./llm-router.ts";

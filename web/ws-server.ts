@@ -4,11 +4,11 @@
  * Replaces SSE with WebSocket for real-time chat and notifications.
  */
 
-import type { Server as HttpServer } from "http";
+import type { Server as HttpServer, IncomingMessage } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { appConfig } from "../core/config.ts";
 import { logger } from "../core/logger.ts";
-import { notificationBus, type NotificationEvent } from "../core/notification-bus.ts";
+import { notificationBus, type NotificationEvent } from "../skills/notification/index.ts";
 import { getRedisPub, getRedisSub } from "../core/redis.ts";
 import { safeRun, resolveConfirm, confirmRequestHandlers } from "./runner-pool.ts";
 import type { ContentBlock } from "../types/index.ts";
@@ -24,22 +24,39 @@ export type WSClient = {
 
 const clients = new Set<WSClient>();
 let wsConnectionsTotal = 0;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let notificationHandler: ((evt: NotificationEvent) => void) | null = null;
 
-const PING_INTERVAL_MS = 30_000;
-const PONG_TIMEOUT_MS = 60_000;
+import { WS_PING_INTERVAL_MS, WS_PONG_TIMEOUT_MS } from "./routes/constants.ts";
+
+const PING_INTERVAL_MS = WS_PING_INTERVAL_MS;
+const PONG_TIMEOUT_MS = WS_PONG_TIMEOUT_MS;
 const MAX_PAYLOAD_BYTES = 256 * 1024;
 const MAX_CONNECTIONS_PER_TOKEN = 5;
 
 const tokenConnections = new Map<string, WSClient[]>();
 
-function verifyToken(url: string): string | null {
+function verifyToken(req: IncomingMessage): string | null {
   if (!API_TOKEN) return "";
+
+  // Preferred: Authorization header (non-browser clients)
+  const auth = req.headers.authorization || "";
+  const bearer = auth.replace(/^Bearer\s+/i, "");
+  if (bearer === API_TOKEN) return bearer;
+
+  // Preferred for browsers: Sec-WebSocket-Protocol subprotocol
+  const proto = req.headers["sec-websocket-protocol"] || "";
+  const match = String(proto).match(/ouroboros-token-(\S+)/);
+  if (match && match[1] === API_TOKEN) return match[1];
+
+  // Deprecated fallback: query string (browser WebSocket cannot set custom headers)
   try {
-    const token = new URL(url, "http://localhost").searchParams.get("token");
-    return token === API_TOKEN ? token : null;
+    const token = new URL(req.url || "", "http://localhost").searchParams.get("token");
+    if (token === API_TOKEN) return token;
   } catch {
-    return null;
+    // ignore
   }
+  return null;
 }
 
 const MAX_BUFFERED_AMOUNT = 1024 * 1024; // 1 MB
@@ -68,7 +85,11 @@ function send(client: WSClient, event: string, data: unknown): boolean {
 }
 
 function startHeartbeat() {
-  setInterval(() => {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+  heartbeatTimer = setInterval(() => {
     const now = Date.now();
     for (const client of clients) {
       if (now - client.lastPongAt > PONG_TIMEOUT_MS) {
@@ -193,12 +214,29 @@ async function handleChatMessage(client: WSClient, payload: string | ContentBloc
 let wsServer: WebSocketServer | null = null;
 
 export function attachWebSocket(server: HttpServer): WebSocketServer {
-  if (wsServer) return wsServer;
+  if (wsServer && (wsServer as any)._server === server) return wsServer;
+  // Close old wsServer if attached to a different HTTP server
+  if (wsServer) {
+    for (const client of clients) {
+      client.ws.terminate();
+    }
+    clients.clear();
+    wsServer.close();
+    wsServer = null;
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+    if (notificationHandler) {
+      notificationBus.off("notification", notificationHandler);
+      notificationHandler = null;
+    }
+  }
   wsServer = new WebSocketServer({ server, path: "/ws", maxPayload: MAX_PAYLOAD_BYTES });
 
   wsServer.on("connection", (ws, req) => {
     const url = req.url || "";
-    const token = verifyToken(url);
+    const token = verifyToken(req);
     if (token === null) {
       ws.close(1008, "Unauthorized");
       return;
@@ -244,6 +282,7 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
 
     ws.on("close", () => {
       clients.delete(client);
+      wsConnectionsTotal--;
       if (client.sessionId) {
         confirmRequestHandlers.delete(client.sessionId);
       }
@@ -264,6 +303,7 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
     ws.on("error", (err) => {
       logger.error("WebSocket error", { error: String(err) });
       clients.delete(client);
+      wsConnectionsTotal--;
     });
 
     ws.on("message", async (raw) => {
@@ -293,9 +333,13 @@ export function attachWebSocket(server: HttpServer): WebSocketServer {
 
   startHeartbeat();
 
-  notificationBus.on("notification", (evt: NotificationEvent) => {
+  if (notificationHandler) {
+    notificationBus.off("notification", notificationHandler);
+  }
+  notificationHandler = (evt: NotificationEvent) => {
     broadcastNotification(evt);
-  });
+  };
+  notificationBus.on("notification", notificationHandler);
 
   // Redis Pub/Sub for multi-instance broadcast
   const sub = getRedisSub();
@@ -326,6 +370,14 @@ export function getWsConnectionsTotal(): number {
 
 export function closeWebSocket(): Promise<void> {
   return new Promise((resolve) => {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+    if (notificationHandler) {
+      notificationBus.off("notification", notificationHandler);
+      notificationHandler = null;
+    }
     if (!wsServer) {
       resolve();
       return;

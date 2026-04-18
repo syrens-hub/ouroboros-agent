@@ -28,9 +28,24 @@ if (require.main !== module) {
     
     const finalArgs = [path.join(__dirname, 'index.js'), ...commandToRun, ...args];
     
+    // 环境变量白名单：只传递必要的非敏感变量
+    const allowedEnvVars = [
+        'PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_*',
+        'FEISHU_APP_ID', 'FEISHU_APP_SECRET', 'FEISHU_BOT_TOKEN',
+        'NODE_ENV', 'NODE_PATH'
+    ];
+    const filteredEnv = {};
+    for (const key of Object.keys(process.env)) {
+        if (allowedEnvVars.some(pattern => 
+            key === pattern || (pattern.endsWith('_*') && key.startsWith(pattern.slice(0, -1)))
+        )) {
+            filteredEnv[key] = process.env[key];
+        }
+    }
+    
     const child = spawn(process.execPath, finalArgs, { 
         stdio: 'inherit',
-        env: process.env // Pass environment variables
+        env: filteredEnv
     });
     
     child.on('close', code => process.exit(code));

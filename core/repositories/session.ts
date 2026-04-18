@@ -1,8 +1,10 @@
 import { getDb } from "../db-manager.ts";
 import { appConfig } from "../config.ts";
-import { timedQuery } from "../telemetry.ts";
+import { timedQuery } from "../../skills/telemetry/index.ts";
+import { safeFailOpenAsync } from "../safe-utils.ts";
 import type { BaseMessage, Result } from "../../types/index.ts";
 import { ok, err } from "../../types/index.ts";
+import { clearSessionState } from "../session-state.ts";
 
 export async function createSession(
   id: string,
@@ -47,7 +49,7 @@ export async function getSession(id: string, includeDeleted = false): Promise<Re
 export async function listSessions(
   includeDeleted = false
 ): Promise<Array<{ sessionId: string; title?: string; status?: string; createdAt?: number }>> {
-  try {
+  return safeFailOpenAsync(async () => {
     const db = getDb();
     return await timedQuery("session:listSessions", async () => {
       const sql = includeDeleted
@@ -66,9 +68,7 @@ export async function listSessions(
         createdAt: r.created_at || undefined,
       }));
     });
-  } catch {
-    return [];
-  }
+  }, "listSessions DB error", []);
 }
 
 export async function updateSession(id: string, fields: Record<string, unknown>): Promise<Result<void>> {
@@ -96,6 +96,7 @@ export async function deleteSession(id: string, hard = false): Promise<Result<vo
       } else {
         await db.prepare("UPDATE sessions SET deleted_at = ?, status = 'deleted' WHERE id = ? AND deleted_at IS NULL").run(Date.now(), id);
       }
+      clearSessionState(id);
       return ok(undefined);
     });
   } catch (e) {

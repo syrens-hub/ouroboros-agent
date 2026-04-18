@@ -104,6 +104,12 @@ export default tseslint.config(
     },
   },
   {
+    files: ["tests/**/*.test.ts", "tests/**/*.test.tsx", "tests/**/*.test.js", "tests/**/*.test.jsx"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
+  {
     ignores: [
       "node_modules/**",
       "web/node_modules/**",
@@ -115,7 +121,6 @@ export default tseslint.config(
       "**/dist/**",
       "**/.openclaw-migrated/**",
       "skills/web-mcp/templates/**",
-      "skills/archive/**",
       "skills/skill-scan/test-fixtures/**",
       "skills/**/scripts/**",
       "skills/feishu-*/**/*.js",

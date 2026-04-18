@@ -12,10 +12,9 @@
 import { existsSync, readFileSync, rmSync, copyFileSync } from "fs";
 import { join } from "path";
 import { createSession, appendMessage } from "../core/session-db.ts";
-import { createAutonomousEvolutionDaemon } from "../skills/autonomous-evolution/index.ts";
+import { autonomousEvolutionLoop } from "../skills/autonomous-evolution/index.ts";
 import { discoverSkills } from "../skills/learning/index.ts";
 import { META_RULE_AXIOM } from "../core/rule-engine.ts";
-import type { EvolutionDecision } from "../skills/autonomous-evolution/index.ts";
 
 const DEMO_SESSION_ID = `autonomous_demo_${Date.now()}`;
 const DAEMON_SOURCE_PATH = join(process.cwd(), "skills", "autonomous-evolution", "index.ts");
@@ -62,41 +61,18 @@ async function main() {
   console.log("[2/4] Starting Autonomous Evolution Daemon...\n");
 
   const beforeSkills = discoverSkills().map((s) => s.name);
-  const decisions: EvolutionDecision[] = [];
 
-  const daemon = createAutonomousEvolutionDaemon({
-    intervalMs: 2000,
-    autoApplyLowRisk: true,
-    selfReviewEveryNTicks: 1, // force self-review on first tick for demo
-    reviewCaller: async (messages) => {
-      // If the prompt contains the demo session, force a CREATE decision
-      const prompt = JSON.stringify(messages);
-      if (prompt.includes(DEMO_SESSION_ID)) {
-        return {
-          success: true,
-          data: `ACTION: create\nSKILL_NAME: ${EXPECTED_SKILL_NAME}\nDESCRIPTION: Cheerful greeting pattern for 'hi' messages.\nMARKDOWN:\n---\nname: ${EXPECTED_SKILL_NAME}\ndescription: Cheerful greeting pattern for 'hi' messages.\nversion: 1.0.0\ntags: [greeting, autonomous, demo]\nautoLoad: false\n---\n
-When the user says "hi", respond with a cheerful greeting and ask how you can help.\n\nEND`,
-        };
-      }
-      return { success: true, data: "NO_ACTION" };
-    },
-    onDecision: (d) => {
-      decisions.push(d);
-      console.log(`  [Decision] action=${d.action} applied=${d.applied} reason=${d.reason}`);
-    },
-    onError: (e) => {
-      console.error("  [Daemon Error]", e.message);
-    },
-  });
+  autonomousEvolutionLoop.start();
 
-  daemon.start();
+  console.log("  [Autonomous Loop] Started");
+  console.log(`  [State] ${JSON.stringify(autonomousEvolutionLoop.getState())}`);
 
-  // Wait for one tick + self-review
+  // Wait for one tick
   await sleep(3500);
 
-  daemon.stop();
+  autonomousEvolutionLoop.stop();
 
-  console.log("\n  → Daemon stopped after first tick.\n");
+  console.log("\n  → Autonomous loop stopped after first tick.\n");
 
   // Phase 3: Verify skill creation
   console.log("[3/4] Verifying autonomous skill creation...\n");

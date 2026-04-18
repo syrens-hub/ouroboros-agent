@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PAYLOAD_TOO_LARGE } from "../constants.ts";
 import type { IncomingMessage, ServerResponse } from "http";
 import type { ToolCallContext } from "../../../types/index.ts";
 import { discoverSkills, installSkillTool, llmCfg, globalPool } from "../../runner-pool.ts";
@@ -10,6 +11,7 @@ import {
   InstallSkillBodySchema,
   ReqContext,
 } from "../shared.ts";
+import { SKILL_LIST_CACHE_TTL_MS } from "../constants.ts";
 
 export async function handleSkills(
   req: IncomingMessage,
@@ -20,7 +22,7 @@ export async function handleSkills(
 ): Promise<boolean> {
   // Skills list
   if (path === "/api/skills" && method === "GET") {
-    const skills = getCached("skills:list", 10_000, () =>
+    const skills = getCached("skills:list", SKILL_LIST_CACHE_TTL_MS, () =>
       discoverSkills().map((s) => ({
         name: s.name,
         description: s.frontmatter.description,
@@ -39,7 +41,7 @@ export async function handleSkills(
     try {
       body = await readBody(req);
     } catch (e) {
-      if (e instanceof Error && e.message === "PAYLOAD_TOO_LARGE") {
+      if (e instanceof Error && e.message === PAYLOAD_TOO_LARGE) {
         json(res, 413, { success: false, error: { message: "Payload too large" } }, ctx);
         return true;
       }
@@ -96,7 +98,7 @@ export async function handleSkills(
     try {
       body = await readBody(req);
     } catch (e) {
-      if (e instanceof Error && e.message === "PAYLOAD_TOO_LARGE") {
+      if (e instanceof Error && e.message === PAYLOAD_TOO_LARGE) {
         json(res, 413, { success: false, error: { message: "Payload too large" } }, ctx);
         return true;
       }

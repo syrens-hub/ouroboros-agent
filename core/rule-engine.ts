@@ -11,6 +11,7 @@
  * But this file is the floor. If you change it, you break the ouroboros.
  */
 
+import { resolve, sep } from "path";
 import type {
   Result,
   ModificationRequest,
@@ -33,6 +34,28 @@ const CORE_PROTECTED_PATHS = [
   "core/tool-framework.ts",
   "core/permission-gate.ts",
 ];
+
+function normalizePath(p: string): string {
+  try {
+    return resolve(p);
+  } catch (e) {
+    // Fail-closed: an unresolvable path is invalid and must not bypass checks.
+    throw new Error(`Invalid path provided to Rule Engine: ${p}. ${String(e)}`);
+  }
+}
+
+function pathEndsWith(p: string, suffix: string): boolean {
+  const normalized = normalizePath(p);
+  const suffixParts = suffix.split("/");
+  const parts = normalized.split(sep);
+  if (parts.length < suffixParts.length) return false;
+  for (let i = 0; i < suffixParts.length; i++) {
+    if (parts[parts.length - suffixParts.length + i] !== suffixParts[i]) {
+      return false;
+    }
+  }
+  return true;
+}
 
 /** Modification types that are permitted without human confirmation under safe conditions. */
 const AUTO_PERMITTED_TYPES: ModificationType[] = [
@@ -107,7 +130,7 @@ export function createRuleEngine(): RuleEngine {
 
       // --- Path-based gating -------------------------------------------------
       const targetPath = req.targetPath || (req.proposedChanges?.targetPath as string | undefined);
-      if (targetPath && targetPath.includes(IMMUTABLE_PATH)) {
+      if (targetPath && pathEndsWith(targetPath, IMMUTABLE_PATH)) {
         // The immutable path can only be touched via "rule_engine_override".
         if (req.type !== "rule_engine_override") {
           return err({
@@ -149,7 +172,7 @@ export function createRuleEngine(): RuleEngine {
     },
 
     isImmutablePath(filePath: string): boolean {
-      return filePath.includes(IMMUTABLE_PATH);
+      return pathEndsWith(filePath, IMMUTABLE_PATH);
     },
 
     exportRules(): string {

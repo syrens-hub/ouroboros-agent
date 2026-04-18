@@ -56,6 +56,15 @@ describe('SystemDashboard', () => {
       if (path === '/api/tasks') {
         return { json: async () => ({ data: [] }) }
       }
+      if (path === '/api/system/circuit-breakers') {
+        return { json: async () => ({ data: [] }) }
+      }
+      if (path === '/api/tasks/queue-stats') {
+        return { json: async () => ({ data: { pending: 0, failed: 0, delayed: 0 } }) }
+      }
+      if (path === '/api/budget') {
+        return { json: async () => ({ data: { totalBudget: 50, usedEstimate: 10, remainingPercent: 80, status: 'ok', llmCalls24h: 42, tokenUsage24h: 1234 } }) }
+      }
       return { json: async () => ({}) }
     })
   })
@@ -67,6 +76,16 @@ describe('SystemDashboard', () => {
     expect(screen.getByText('5')).toBeInTheDocument()
     expect(screen.getByText('记忆召回')).toBeInTheDocument()
     expect(screen.getByText('15')).toBeInTheDocument()
+  })
+
+  it('renders budget card with ok status', async () => {
+    render(<SystemDashboard status={{}} />, { wrapper: Wrapper })
+    expect(await screen.findByText('预算监控')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getAllByText('正常').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText('1,234').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText('42').length).toBeGreaterThanOrEqual(1)
+    })
   })
 
   it('renders kb stats card', async () => {
@@ -157,5 +176,16 @@ describe('SystemDashboard', () => {
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith('/api/backup/db/create', { method: 'POST' })
     })
+  })
+
+  it('renders circuit breaker panel', async () => {
+    render(<SystemDashboard status={{}} />, { wrapper: Wrapper })
+    expect(await screen.findByText('LLM 熔断器状态')).toBeInTheDocument()
+  })
+
+  it('renders queue stats', async () => {
+    render(<SystemDashboard status={{}} />, { wrapper: Wrapper })
+    expect(await screen.findByText('待处理')).toBeInTheDocument()
+    expect(await screen.findByText('失败')).toBeInTheDocument()
   })
 })

@@ -1,7 +1,8 @@
 import * as os from "os";
-import { SmartCache, type SmartCacheStats } from "./smart-cache.ts";
+import { SmartCache, type SmartCacheStats } from "../skills/smart-cache/index.ts";
 import { BatchProcessor, type BatchProcessorConfig, type BatchProcessorStats } from "./batch-processor.ts";
 import { ConnectionPool } from "./connection-pool.ts";
+import { safeIgnore } from "./safe-utils.ts";
 
 export interface PerformanceOptimizerConfig {
   reportIntervalMs?: number;
@@ -49,6 +50,7 @@ export class PerformanceOptimizer {
   private reportListeners: ReportCallback[] = [];
   private reportInterval: ReturnType<typeof setInterval> | undefined;
   private resourceInterval: ReturnType<typeof setInterval> | undefined;
+  private timerIds: ReturnType<typeof setInterval>[] = [];
   private lastCpu = getCpuSnapshot();
   private cpuUsage = 0;
   private memoryUsage = 0;
@@ -110,19 +112,18 @@ export class PerformanceOptimizer {
       config,
       validator,
     );
-    (pool as unknown as { name: string }).name = name;
-    (pool as unknown as { getStats: () => ConnectionPoolStats }).getStats = () => ({
-      activeConnections: (pool as unknown as { active: Set<T> }).active.size,
-      idleConnections: (pool as unknown as { idle: Array<{ conn: T; since: number }> }).idle.length,
-    });
+    (pool as unknown as { _name?: string })._name = name;
     this.pools.set(name, pool as ConnectionPool<unknown>);
     return pool;
   }
 
   initialize(): void {
-    if (this.resourceInterval) {
-      return;
+    for (const id of this.timerIds) {
+      clearInterval(id);
     }
+    this.timerIds = [];
+
+    this.lastCpu = getCpuSnapshot();
     this.resourceInterval = setInterval(() => {
       const current = getCpuSnapshot();
       const idleDiff = current.idle - this.lastCpu.idle;
@@ -131,18 +132,16 @@ export class PerformanceOptimizer {
       this.lastCpu = current;
       this.memoryUsage = (1 - os.freemem() / os.totalmem()) * 100;
     }, this.config.resourceSampleIntervalMs);
+    this.timerIds.push(this.resourceInterval);
 
     if (this.config.reportIntervalMs > 0) {
       this.reportInterval = setInterval(() => {
         const stats = this.getStats();
         for (const cb of this.reportListeners) {
-          try {
-            cb(stats);
-          } catch {
-            // ignore listener errors
-          }
+          safeIgnore(() => cb(stats), "performance-optimizer report listener");
         }
       }, this.config.reportIntervalMs);
+      this.timerIds.push(this.reportInterval);
     }
   }
 
@@ -161,7 +160,7 @@ export class PerformanceOptimizer {
     }
     const pools: Record<string, ConnectionPoolStats> = {};
     for (const [name, pool] of this.pools) {
-      pools[name] = (pool as unknown as { getStats: () => ConnectionPoolStats }).getStats();
+      pools[name] = pool.getStats();
     }
     return {
       cpuUsage: this.cpuUsage,
@@ -228,6 +227,10 @@ export class PerformanceOptimizer {
       clearInterval(this.resourceInterval);
       this.resourceInterval = undefined;
     }
+    for (const id of this.timerIds) {
+      clearInterval(id);
+    }
+    this.timerIds = [];
     for (const cache of this.caches.values()) {
       cache.destroy();
     }

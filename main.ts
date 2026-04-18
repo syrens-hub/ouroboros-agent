@@ -6,6 +6,10 @@
  */
 
 import "dotenv/config";
+import * as Sentry from "@sentry/node";
+import { appConfig } from "./core/config.ts";
+import { join, dirname } from "path";
+import { mkdirSync, writeFileSync } from "fs";
 import { createToolPool } from "./core/tool-framework.ts";
 import { setSelfModifyConfirmCallback } from "./skills/self-modify/index.ts";
 import {
@@ -13,13 +17,22 @@ import {
   discoverSkillsTool,
   writeSkillTool,
   readSkillTool,
+  listSkillVersionsTool,
+  restoreSkillVersionTool,
+  pruneSkillVersionsTool,
 } from "./skills/learning/index.ts";
 import { selfModifyTool, ruleEngineOverrideTool } from "./skills/self-modify/index.ts";
 import { agentLoopTool, createAgentLoopRunner, createMockLLMCaller } from "./skills/agent-loop/index.ts";
+import { createSessionArchiver } from "./skills/session-archiver/index.ts";
+import { createCheckpoint } from "./skills/checkpoint/index.ts";
 import { META_RULE_AXIOM } from "./core/rule-engine.ts";
 import { getMessages, getSession, getTrajectories, getSkillRegistry } from "./core/session-db.ts";
-import { maybeAutoBackup } from "./core/backup.ts";
+import { maybeAutoBackup } from "./skills/backup/index.ts";
 import type { LLMConfig } from "./core/llm-router.ts";
+
+// 全局定时器引用
+let backupTimer: NodeJS.Timeout | undefined;
+let runnerInstance: ReturnType<typeof createAgentLoopRunner> | undefined;
 
 // =============================================================================
 // Bootstrap
@@ -37,17 +50,27 @@ async function main() {
 
   // Register human-confirmation callback for self-modification
   setSelfModifyConfirmCallback(async (req) => {
+    if (process.env.OUROBOROS_DEMO_MODE !== "1") {
+      console.log("\n[SELF-MODIFICATION REQUEST DENIED]");
+      console.log("  Self-modification is disabled by default for safety.");
+      console.log("  Set OUROBOROS_DEMO_MODE=1 to enable the interactive demo mode.\n");
+      return false;
+    }
+
     console.log("\n[SELF-MODIFICATION REQUEST]");
     console.log(`  Type: ${req.type}`);
     console.log(`  Risk: ${req.estimatedRisk}`);
     console.log(`  Rationale: ${req.rationale}`);
     console.log(`  Description: ${req.description}`);
-    if (req.estimatedRisk === "low" || req.estimatedRisk === "medium") {
-      console.log("  Auto-approved (low/medium risk demo mode).\n");
-      return true;
+
+    // In demo mode, still deny high/critical risk modifications
+    if (req.estimatedRisk === "high" || req.estimatedRisk === "critical") {
+      console.log("  Denied in demo mode (high/critical requires real prompt).\n");
+      return false;
     }
-    console.log("  Denied in demo mode (high/critical requires real prompt).\n");
-    return false;
+
+    console.log("  Approved in demo mode (low/medium risk).\n");
+    return true;
   });
 
   // Assemble the global tool pool
@@ -56,6 +79,9 @@ async function main() {
   globalPool.register(discoverSkillsTool);
   globalPool.register(writeSkillTool);
   globalPool.register(readSkillTool);
+  globalPool.register(listSkillVersionsTool);
+  globalPool.register(restoreSkillVersionTool);
+  globalPool.register(pruneSkillVersionsTool);
   globalPool.register(selfModifyTool);
   globalPool.register(ruleEngineOverrideTool);
   globalPool.register(agentLoopTool);
@@ -96,20 +122,32 @@ async function main() {
     console.log("Using MOCK LLM (set LLM_API_KEY and LLM_PROVIDER in .env to use real model)\n");
   }
 
-  // Schedule daily auto-backup
-  setInterval(() => maybeAutoBackup(), 24 * 60 * 60 * 1000);
-  maybeAutoBackup().catch(() => {});
+  // Schedule daily auto-backup - 保存引用以便清理
+  const backupTimer = setInterval(() => maybeAutoBackup(), 24 * 60 * 60 * 1000);
+  backupTimer.unref(); // 防止阻止进程退出
+  maybeAutoBackup().catch((e) => {
+    // Intentionally non-fatal: auto-backup failure should not block startup
+    console.error("Auto-backup failed during startup:", e);
+  });
 
   const sessionId = `session_${Date.now()}`;
 
   // Create the agent loop runner
+  const loopConfig = {
+    max_iterations: 100,
+    checkpoint_interval: 5,
+    enable_pause: true,
+    enable_resume: true,
+  };
   const runner = createAgentLoopRunner({
+    loopConfig,
     sessionId,
     tools: globalPool.all(),
     llm: llmCfg,
     llmCaller,
     enableBackgroundReview: !!llmCfg,
   });
+  runnerInstance = runner;
 
   // Demo inputs
   const demos = [
@@ -180,12 +218,85 @@ async function main() {
 
 async function shutdown(signal: string) {
   console.log(`\nReceived ${signal}, shutting down gracefully...`);
-  await new Promise((r) => setTimeout(r, 1000));
+
+  // 1. 保存循环状态快照
+  if (runnerInstance) {
+    try {
+      const snapshot = runnerInstance.exportState();
+      const snapshotPath = join(process.cwd(), ".ouroboros", `loop-snapshot-${snapshot.sessionId}.json`);
+      mkdirSync(dirname(snapshotPath), { recursive: true });
+      writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2), "utf-8");
+      console.log(`Loop state snapshot saved: ${snapshotPath}`);
+    } catch (e) {
+      console.error("Failed to save loop state snapshot:", e);
+    }
+
+    // 2. 保存最终 checkpoint
+    try {
+      const cp = createCheckpoint(process.cwd(), runnerInstance.getState().sessionId);
+      if (cp.success) {
+        console.log(`Final checkpoint created: ${cp.data.id}`);
+      }
+    } catch (e) {
+      console.error("Failed to create final checkpoint:", e);
+    }
+  }
+
+  // 3. 触发 Session 归档
+  try {
+    const archiver = createSessionArchiver({ archive_path: join(process.cwd(), ".ouroboros", "archive") });
+    const stats = await archiver.run();
+    console.log(`Session archiver stats: hot=${stats.hotSessions}, warm=${stats.warmSessions}, cold=${stats.coldSessions}, archived=${stats.archivedCount}, cleaned=${stats.cleanedCount}`);
+  } catch (e) {
+    console.error("Session archiver failed:", e);
+  }
+
+  // 4. 清理定时器
+  if (typeof backupTimer !== 'undefined') {
+    clearInterval(backupTimer);
+  }
+
+  console.log("Resource cleanup confirmed. Goodbye!\n");
   process.exit(0);
 }
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
+
+// =============================================================================
+// Sentry initialization
+// =============================================================================
+
+function initSentry() {
+  if (!process.env.SENTRY_DSN) {
+    console.warn("[Sentry] SENTRY_DSN not set — error tracking disabled.");
+    return;
+  }
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.SENTRY_ENVIRONMENT || "development",
+  });
+  console.log("[Sentry] Initialized.");
+}
+
+// =============================================================================
+// Global exception handlers
+// =============================================================================
+
+if (appConfig.sentry.dsn) {
+  initSentry();
+}
+
+process.on("uncaughtException", (err) => {
+  console.error("FATAL: Uncaught exception:", err);
+  Sentry.captureException(err);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("FATAL: Unhandled rejection:", reason);
+  Sentry.captureException(reason);
+});
 
 main().catch((e) => {
   console.error("Fatal error:", e);

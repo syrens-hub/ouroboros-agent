@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { IncomingMessage, ServerResponse } from "http";
-import { createPersonalityEvolution } from "../../../skills/personality/index.ts";
-import { json, readBody, parseBody, ReqContext } from "../shared.ts";
+import { createPersonalityEvolution, syncSoulMd } from "../../../skills/personality/index.ts";
+import { json, readJsonBody, ReqContext 
+} from "../shared.ts";
 
 export async function handlePersonality(
   req: IncomingMessage,
@@ -17,7 +18,8 @@ export async function handlePersonality(
   if (personalityMatch && method === "GET") {
     const sessionId = personalityMatch[1];
     const pe = createPersonalityEvolution(sessionId);
-    json(res, 200, { success: true, data: { description: pe.generatePersonalityDescription(), traits: (pe as unknown as { traits: Record<string, number> }).traits, values: (pe as unknown as { values: string[] }).values } }, ctx);
+    const state = pe.getState();
+    json(res, 200, { success: true, data: { description: pe.generatePersonalityDescription(), traits: state.traits, values: state.values } }, ctx);
     return true;
   }
   const personalityAnchorsMatch = path.match(/^\/api\/personality\/([^/]+)\/anchors$/);
@@ -30,24 +32,29 @@ export async function handlePersonality(
   }
   if (personalityAnchorsMatch && method === "POST") {
     const sessionId = personalityAnchorsMatch[1];
-    let body: string;
-    try {
-      body = await readBody(req);
-    } catch (e) {
-      if (e instanceof Error && e.message === "PAYLOAD_TOO_LARGE") {
-        json(res, 413, { success: false, error: { message: "Payload too large" } }, ctx);
-        return true;
-      }
-      throw e;
-    }
-    const parsed = parseBody(body, z.object({ content: z.string(), category: z.enum(["value", "preference", "behavior"]), importance: z.number().min(0).max(1) }));
+    const parsed = await readJsonBody(req, z.object({ content: z.string(), category: z.enum(["value", "preference", "behavior"]), importance: z.number().min(0).max(1) }));
     if (!parsed.success) {
-      json(res, 400, { success: false, error: { message: parsed.error } }, ctx);
+      json(res, parsed.status, { success: false, error: { message: parsed.error } }, ctx);
       return true;
     }
     const pe = createPersonalityEvolution(sessionId);
     pe.addAnchorMemory(parsed.data);
     json(res, 200, { success: true }, ctx);
+    return true;
+  }
+
+  if (path === "/api/personality/sync-soul" && method === "POST") {
+    const parsed = await readJsonBody(req, z.object({ sessionId: z.string() }));
+    if (!parsed.success) {
+      json(res, parsed.status, { success: false, error: { message: parsed.error } }, ctx);
+      return true;
+    }
+    try {
+      await syncSoulMd(parsed.data.sessionId);
+      json(res, 200, { success: true }, ctx);
+    } catch (e) {
+      json(res, 500, { success: false, error: { message: String(e) } }, ctx);
+    }
     return true;
   }
 

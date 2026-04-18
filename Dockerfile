@@ -8,30 +8,26 @@ RUN apt-get update && apt-get install -y \
     python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user early so npm installs files with correct ownership
+RUN groupadd -r ouroboros && useradd -r -g ouroboros -m -d /home/ouroboros ouroboros
+
 WORKDIR /app
+RUN chown -R ouroboros:ouroboros /app
 
-# Copy package files
-COPY package*.json ./
-COPY web/package*.json ./web/
+# Copy package files and install dependencies as non-root user
+COPY --chown=ouroboros:ouroboros package*.json ./
+COPY --chown=ouroboros:ouroboros web/package*.json ./web/
 
-# Install dependencies
+USER ouroboros
 RUN npm ci
 RUN cd web && npm ci
 
-# Copy source
-COPY . .
-
-# Build web UI
+# Copy source and build web UI
+COPY --chown=ouroboros:ouroboros . .
 RUN cd web && npm run build
-
-# Create non-root user and ensure ownership of app dir
-RUN groupadd -r ouroboros && useradd -r -g ouroboros -m -d /home/ouroboros ouroboros \
-  && chown -R ouroboros:ouroboros /app
 
 # Expose web port
 EXPOSE 8080
-
-USER ouroboros
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

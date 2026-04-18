@@ -17,10 +17,12 @@ export function wsUrl(sessionId) {
   const host = window.location.host
   const base = `${protocol}//${host}/ws`
   const params = new URLSearchParams()
-  if (API_TOKEN) params.set('token', API_TOKEN)
   if (sessionId) params.set('sessionId', sessionId)
   const qs = params.toString()
-  return qs ? `${base}?${qs}` : base
+  const url = qs ? `${base}?${qs}` : base
+  // Pass token via subprotocol to avoid query-string leakage in logs/referrer
+  const protocols = API_TOKEN ? [`ouroboros-token-${API_TOKEN}`] : undefined
+  return { url, protocols }
 }
 
 async function fetchWithTimeout(path, opts = {}, timeoutMs = 10000) {

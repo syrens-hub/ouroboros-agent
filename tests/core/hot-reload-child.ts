@@ -1,4 +1,4 @@
-import { watchModule } from "../../core/hot-reload.ts";
+import { watchModule } from "../../skills/hot-reload/index.ts";
 import { writeFileSync } from "fs";
 
 async function main() {

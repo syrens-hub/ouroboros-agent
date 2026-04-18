@@ -1,16 +1,65 @@
-.git
-.github
+# Dependencies
 node_modules
 web/node_modules
+
+# Build outputs
+web/dist
+dist
+*.tsbuildinfo
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Test files
 tests
 e2e
 playwright-report
 test-results
-scripts
-*.md
-!k8s/README.md
-.env
-.env.example
+vitest.config.ts
+
+# Local data
 .ouroboros
+.ouroboros.lock
+uploads
+backups
+skill-versions
+browser-screenshots
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
 .vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Documentation (keep AGENTS.md and README.md)
+docs
+*.md
+!AGENTS.md
+!README.md
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Kubernetes
+k8s
+
+# Archive
+skills/archive

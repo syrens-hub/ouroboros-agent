@@ -12,6 +12,11 @@ const MODELS = {
   minimax: 'MiniMax-M2.5'
 };
 
+// 验证 GitHub URL 格式
+function isValidGithubUrl(url) {
+  return /^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+(\?.*)?$/.test(url);
+}
+
 module.exports = {
   name: 'github-code-analyzer',
   description: '分析 GitHub 项目代码质量。支持模型：deepseek, deepseek-coder',
@@ -24,18 +29,19 @@ module.exports = {
       return { text: '请提供 GitHub 仓库地址，例如：\n分析 https://github.com/xxx/xxx\n\n可用模型：deepseek, deepseek-coder\n用法：分析 xxx --model deepseek-coder', success: false };
     }
 
-    // 提取 owner/repo
-    const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
-    if (!match) {
+    // 验证 URL 格式
+    if (!isValidGithubUrl(repoUrl)) {
       return { text: '无效的 GitHub 地址', success: false };
     }
 
+    // 提取 owner/repo
+    const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
     const [, owner, repo] = match;
     const tempDir = path.join(os.tmpdir(), `gh-analysis-${Date.now()}`);
 
     try {
-      // 1. 克隆仓库
-      await execAsync(`git clone --depth 1 ${repoUrl} ${tempDir}`, 60000);
+      // 1. 克隆仓库 - 使用数组形式避免命令注入
+      await execAsync(['git', 'clone', '--depth', '1', repoUrl, tempDir], 60000);
       
       // 2. 列出项目结构
       const structure = await getProjectStructure(tempDir);

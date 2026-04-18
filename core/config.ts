@@ -58,6 +58,64 @@ export const appConfig = {
     dsn: process.env.SENTRY_DSN || "",
     environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || "development",
   },
+  auxiliary: {
+    compression: {
+      provider: process.env.AUXILIARY_COMPRESSION_PROVIDER || undefined,
+      model: process.env.AUXILIARY_COMPRESSION_MODEL || undefined,
+      apiKey: process.env.AUXILIARY_COMPRESSION_API_KEY || undefined,
+      baseUrl: process.env.AUXILIARY_COMPRESSION_BASE_URL || undefined,
+    },
+    review: {
+      provider: process.env.AUXILIARY_REVIEW_PROVIDER || undefined,
+      model: process.env.AUXILIARY_REVIEW_MODEL || undefined,
+      apiKey: process.env.AUXILIARY_REVIEW_API_KEY || undefined,
+      baseUrl: process.env.AUXILIARY_REVIEW_BASE_URL || undefined,
+    },
+    vision: {
+      provider: process.env.AUXILIARY_VISION_PROVIDER || undefined,
+      model: process.env.AUXILIARY_VISION_MODEL || undefined,
+      apiKey: process.env.AUXILIARY_VISION_API_KEY || undefined,
+      baseUrl: process.env.AUXILIARY_VISION_BASE_URL || undefined,
+    },
+    summarization: {
+      provider: process.env.AUXILIARY_SUMMARIZATION_PROVIDER || undefined,
+      model: process.env.AUXILIARY_SUMMARIZATION_MODEL || undefined,
+      apiKey: process.env.AUXILIARY_SUMMARIZATION_API_KEY || undefined,
+      baseUrl: process.env.AUXILIARY_SUMMARIZATION_BASE_URL || undefined,
+    },
+  },
+  mcp: {
+    servers: (() => {
+      try {
+        const raw = process.env.MCP_SERVERS;
+        if (raw) return JSON.parse(raw);
+      } catch {
+        // ignore malformed JSON
+      }
+      return [];
+    })(),
+  },
+  otel: {
+    enabled: process.env.OTEL_ENABLED === "1" || process.env.OTEL_ENABLED === "true",
+    endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "http://localhost:4318",
+    headers: (() => {
+      try {
+        const raw = process.env.OTEL_EXPORTER_OTLP_HEADERS;
+        if (raw) {
+          return Object.fromEntries(raw.split(",").map((pair) => {
+            const [k, ...rest] = pair.trim().split("=");
+            return [k, rest.join("=")];
+          }));
+        }
+      } catch {
+        // ignore malformed headers
+      }
+      return {} as Record<string, string>;
+    })(),
+    serviceName: process.env.OTEL_SERVICE_NAME || "ouroboros-agent",
+    serviceVersion: process.env.OTEL_SERVICE_VERSION || "0.1.0",
+    timeoutMs: process.env.OTEL_EXPORTER_OTLP_TIMEOUT ? parseInt(process.env.OTEL_EXPORTER_OTLP_TIMEOUT, 10) : 10_000,
+  },
 };
 
 export type AppConfig = typeof appConfig;

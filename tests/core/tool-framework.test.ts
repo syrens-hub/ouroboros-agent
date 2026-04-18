@@ -19,7 +19,7 @@ describe("Tool Framework", () => {
 
     expect(tool.name).toBe("test_tool");
     expect(tool.isReadOnly).toBe(false);
-    expect(tool.isConcurrencySafe).toBe(false);
+    expect(typeof tool.isConcurrencySafe === "function" ? tool.isConcurrencySafe({}) : tool.isConcurrencySafe).toBe(false);
     expect(tool.checkPermissions({ value: "x" }, { alwaysAllowRules: [], alwaysDenyRules: [], alwaysAskRules: [], mode: "interactive", source: "cli" })).toEqual({ success: true, data: "allow" });
   });
 
@@ -83,7 +83,29 @@ describe("Tool Framework", () => {
     expect(results.get("id2")).toEqual({ success: true, data: "r2" });
   });
 
-  it("StreamingToolExecutor aborts siblings on write tool failure", async () => {
+  it("StreamingToolExecutor partitions safe+unsafe into serial batches", async () => {
+    const ctx: ToolCallContext<unknown> = {
+      taskId: "task3",
+      abortSignal: new AbortController().signal,
+      reportProgress: () => {},
+      invokeSubagent: (async () => ({ success: true })) as unknown as ToolCallContext<unknown>["invokeSubagent"],
+    };
+    const executor = new StreamingToolExecutor(ctx);
+
+    const safeTool = buildTool({ name: "safe", description: "d", inputSchema: z.object({}), isConcurrencySafe: true, isReadOnly: true, call: async () => "safe" });
+    const unsafeTool = buildTool({ name: "unsafe", description: "d", inputSchema: z.object({}), isConcurrencySafe: false, isReadOnly: false, call: async () => "unsafe" });
+
+    executor.addTool("id1", safeTool, {});
+    executor.addTool("id2", unsafeTool, {});
+    executor.addTool("id3", safeTool, {});
+
+    const results = await executor.executeAll();
+    expect(results.get("id1")).toEqual({ success: true, data: "safe" });
+    expect(results.get("id2")).toEqual({ success: true, data: "unsafe" });
+    expect(results.get("id3")).toEqual({ success: true, data: "safe" });
+  });
+
+  it("StreamingToolExecutor aborts siblings on write tool failure in concurrent batch", async () => {
     const ctx: ToolCallContext<unknown> = {
       taskId: "task2",
       abortSignal: new AbortController().signal,
@@ -115,6 +137,7 @@ describe("Tool Framework", () => {
       description: "d",
       inputSchema: z.object({}),
       isReadOnly: false,
+      isConcurrencySafe: true,
       call: async () => {
         throw new Error("write failed");
       },

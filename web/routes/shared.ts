@@ -3,25 +3,15 @@ import { z } from "zod";
 import { type IncomingMessage, type ServerResponse } from "http";
 import { readFileSync, existsSync, statSync, writeFileSync, mkdirSync } from "fs";
 import { join, extname } from "path";
-import { randomUUID } from "crypto";
+import { randomUUID, timingSafeEqual, createHash } from "crypto";
 import Database from "better-sqlite3";
-import { listSessions, getDb } from "../../core/session-db.ts";
 import { createTrajectoryCompressor } from "../../skills/learning/index.ts";
 import type { TrajectoryEntry } from "../../types/index.ts";
 import { appConfig } from "../../core/config.ts";
-import { logger } from "../../core/logger.ts";
-import { notificationBus, type NotificationEvent } from "../../core/notification-bus.ts";
+import { PAYLOAD_TOO_LARGE } from "./constants.ts";
+import { notificationBus, type NotificationEvent } from "../../skills/notification/index.ts";
 
-import { getLLMMetrics } from "../../core/llm-metrics.ts";
 import { initSentry } from "../../core/sentry.ts";
-import {
-  llmCfg,
-  discoverSkills,
-  getDaemonStatus,
-  getRunnerPoolStats,
-} from "../runner-pool.ts";
-import { getWorkerRunnerStats } from "../../skills/orchestrator/index.ts";
-
 import { feishuPlugin } from "../../extensions/im/feishu/index.ts";
 import { mockChatPlugin } from "../../extensions/im/mock-chat/index.ts";
 import { telegramPlugin } from "../../extensions/im/telegram/index.ts";
@@ -31,16 +21,17 @@ import { dingtalkPlugin } from "../../extensions/im/dingtalk/index.ts";
 import { wechatworkPlugin } from "../../extensions/im/wechatwork/index.ts";
 import { ChannelRegistry } from "../../core/channel-registry.ts";
 
-import { createSelfHealer } from "../../core/self-healing.ts";
-import { createTaskScheduler } from "../../core/task-scheduler.ts";
+import { createSelfHealer } from "../../skills/self-healing/index.ts";
+import { createTaskScheduler } from "../../skills/task-scheduler/index.ts";
 import { MultimediaGenerator } from "../../skills/multimedia/index.ts";
-import { getI18n, createI18n } from "../../core/i18n.ts";
+import { getI18n, createI18n } from "../../skills/i18n/index.ts";
 import { createContextManager } from "../../skills/context-management/index.ts";
 import { BrowserController } from "../../skills/browser/index.ts";
 import { createSecurityFramework } from "../../core/security-framework.ts";
-import { WebhookManager } from "../../core/webhook-manager.ts";
+import { WebhookManager } from "../../skills/webhooks/index.ts";
 import { LearningEngine } from "../../skills/learning/engine.ts";
-import { broadcastNotification, getWsClientCount, getWsConnectionsTotal } from "../ws-server.ts";
+import { broadcastNotification } from "../ws-server.ts";
+import { hookRegistry } from "../../core/hook-system.ts";
 
 initSentry();
 
@@ -49,13 +40,26 @@ const DB_PATH = join(appConfig.db.dir.startsWith("/") ? appConfig.db.dir : join(
 const OUT_DIR = join(process.cwd(), ".ouroboros");
 const OUT_PATH = join(OUT_DIR, "trajectories.jsonl");
 
-const API_TOKEN = appConfig.web.apiToken || "";
+function getApiToken(): string {
+  return appConfig.web.apiToken || "";
+}
 const ALLOWED_ORIGINS = appConfig.web.allowedOrigins;
 const MAX_BODY_SIZE = 2 * 1024 * 1024; // 2 MB
 
 notificationBus.on("notification", (evt: NotificationEvent) => {
   broadcastNotification(evt);
+  hookRegistry.emit("notification", {
+    type: evt.type,
+    title: evt.title,
+    message: evt.message,
+    timestamp: evt.timestamp,
+    ...evt.meta,
+  }).catch(() => {});
 });
+
+// Initialize hooks once at module load
+hookRegistry.registerBuiltins();
+hookRegistry.discoverAndLoad();
 
 const MIME: Record<string, string> = {
   ".html": "text/html",
@@ -107,20 +111,46 @@ export function createReqContext(): ReqContext {
 // =============================================================================
 
 export function getOrigin(req: IncomingMessage): string {
-  const origin = req.headers.origin || req.headers.referer || "";
+  // Only use Origin header for CORS validation. Referer can be forged or omitted.
+  const origin = req.headers.origin || "";
   return origin;
 }
 
 function isAllowedOrigin(origin: string): boolean {
-  if (ALLOWED_ORIGINS.length === 0) return true;
+  if (!origin) return false; // Never allow missing origin for credentialed requests
+  if (ALLOWED_ORIGINS.length === 0) {
+    // No origins configured: require explicit Authorization header for all protected endpoints
+    return false;
+  }
+  // Only match exact origins — no subdomain or prefix wildcards without explicit config
   return ALLOWED_ORIGINS.includes(origin);
 }
 
+/**
+ * Determine the appropriate Access-Control-Allow-Origin header value.
+ * Returns the matching origin for credentialed requests, or "*" only when
+ * no credentials are involved and origins are explicitly allowed.
+ */
+function getAllowOriginValue(origin: string): string {
+  if (!origin) return "";
+  if (!isAllowedOrigin(origin)) {
+    // Fallback to the first explicitly configured origin (for preflight responses only).
+    // This does NOT grant cross-origin access — CORS validation above already rejected it.
+    // We return an empty string so the browser receives no Allow-Origin, denying the request.
+    return "";
+  }
+  return origin;
+}
+
 export function setCorsHeaders(res: ServerResponse, origin: string) {
-  const allowOrigin = isAllowedOrigin(origin) ? origin : ALLOWED_ORIGINS[0] || "";
+  const allowOrigin = getAllowOriginValue(origin);
+  // Only set the header when we have a validated origin — never "*" with credentials
   if (allowOrigin) {
     res.setHeader("Access-Control-Allow-Origin", allowOrigin);
+    res.setHeader("Vary", "Origin");
   }
+  // Credentials are never sent to untrusted origins here
+  res.setHeader("Access-Control-Allow-Credentials", "false");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   res.setHeader("Access-Control-Expose-Headers", "X-Request-ID");
@@ -138,7 +168,7 @@ export function readBody(req: IncomingMessage, maxBytes = MAX_BODY_SIZE): Promis
       received += c.length;
       if (received > maxBytes) {
         req.destroy();
-        reject(new Error("PAYLOAD_TOO_LARGE"));
+        reject(new Error(PAYLOAD_TOO_LARGE));
         return;
       }
       chunks.push(c);
@@ -156,7 +186,7 @@ function readBodyBuffer(req: IncomingMessage, maxBytes = MAX_BODY_SIZE): Promise
       received += c.length;
       if (received > maxBytes) {
         req.destroy();
-        reject(new Error("PAYLOAD_TOO_LARGE"));
+        reject(new Error(PAYLOAD_TOO_LARGE));
         return;
       }
       chunks.push(c);
@@ -220,6 +250,26 @@ function parseBody<T>(body: string, schema: z.ZodSchema<T>): { success: true; da
   return { success: true, data: result.data };
 }
 
+export async function readJsonBody<T>(
+  req: IncomingMessage,
+  schema: z.ZodSchema<T>,
+): Promise<{ success: true; data: T } | { success: false; error: string; status: 400 | 413 }> {
+  let body: string;
+  try {
+    body = await readBody(req);
+  } catch (e) {
+    if (e instanceof Error && e.message === PAYLOAD_TOO_LARGE) {
+      return { success: false, error: "Payload too large", status: 413 };
+    }
+    throw e;
+  }
+  const parsed = parseBody(body, schema);
+  if (!parsed.success) {
+    return { success: false, error: parsed.error, status: 400 };
+  }
+  return { success: true, data: parsed.data };
+}
+
 // =============================================================================
 // Simple In-Memory Cache
 // =============================================================================
@@ -231,14 +281,25 @@ const MAX_API_CACHE_SIZE = 100;
 function getCached<T>(key: string, ttlMs: number, fn: () => T): T {
   const now = Date.now();
   const entry = apiCache.get(key);
-  if (entry && entry.expiresAt > now) return entry.data as T;
-  const data = fn();
+  // Use >= so that entries that are exactly at expiry are treated as expired
+  // (same semantics as a wall-clock TTL boundary).
+  if (entry && entry.expiresAt >= now) return entry.data as T;
+
+  // Evict expired entries opportunistically when cache is not full.
+  // This prevents unbounded growth of stale entries.
   if (apiCache.size >= MAX_API_CACHE_SIZE) {
-    const firstKey = apiCache.keys().next().value;
-    if (firstKey !== undefined) {
-      apiCache.delete(firstKey);
+    // Remove all expired entries first before forcing LRU eviction.
+    for (const [k, e] of apiCache.entries()) {
+      if (e.expiresAt < now) apiCache.delete(k);
+    }
+    // If still full after purging expired, evict the oldest entry.
+    if (apiCache.size >= MAX_API_CACHE_SIZE) {
+      const firstKey = apiCache.keys().next().value;
+      if (firstKey !== undefined) apiCache.delete(firstKey);
     }
   }
+
+  const data = fn();
   apiCache.set(key, { data, expiresAt: now + ttlMs });
   return data;
 }
@@ -257,12 +318,50 @@ function getClientIp(req: IncomingMessage): string {
 // Auth
 // =============================================================================
 
-function isAuthValid(req: IncomingMessage, _urlPath: string): boolean {
-  if (!API_TOKEN) return true;
+function isAuthValid(req: IncomingMessage, urlPath: string): boolean {
+  // Health/readiness/metrics probes must remain unauthenticated for load balancers and k8s
+  if (urlPath === "/api/health" || urlPath === "/api/ready" || urlPath === "/api/metrics") {
+    return true;
+  }
+  // SECURITY FIX: Empty API token means authentication is REQUIRED but not configured.
+  // Previously this returned `true` (bypassing auth), which is a critical security hole.
+  // In production, WEB_API_TOKEN must be set to a non-empty value.
+  const apiToken = getApiToken();
+  if (!apiToken) {
+    // Log the first attempt per process to help operators diagnose misconfiguration,
+    // but don't include sensitive details in the log.
+    if (process.env.NODE_ENV === "production") {
+      // In production, deny ALL authenticated endpoints when the token is not configured.
+      // This prevents accidental deployment with auth disabled.
+      return false;
+    }
+    // In development, warn loudly but still allow unauthenticated access for local testing.
+    if (process.env.NODE_ENV === "development") {
+      // Only warn once to avoid log spam during dev sessions.
+      if (!_authWarningEmitted) {
+        _authWarningEmitted = true;
+         
+        console.warn(
+          "[Ouroboros Security] WEB_API_TOKEN is not set. " +
+            "Authentication is bypassed in development mode. " +
+            "Set WEB_API_TOKEN in production to enable authentication."
+        );
+      }
+      return true;
+    }
+    return false;
+  }
   const auth = req.headers.authorization || "";
   const bearer = auth.replace(/^Bearer\s+/i, "");
-  return bearer === API_TOKEN;
+  if (!bearer) return false;
+  // Use timing-safe comparison to prevent timing attacks on the API token.
+  const a = createHash("sha256").update(bearer).digest();
+  const b = createHash("sha256").update(apiToken).digest();
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
+
+let _authWarningEmitted = false;
 
 // =============================================================================
 // Security Headers
@@ -272,123 +371,26 @@ export function setSecurityHeaders(res: ServerResponse) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  // CSP: SPA需要 'unsafe-inline'，未来应迁移到 nonce-based 方案
+  // 'strict-dynamic' 可以帮助但需要 Vite 配置支持
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self';"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.github.com; img-src 'self' data: https:; font-src 'self'; base-uri 'self';"
   );
 }
 
-// =============================================================================
-// Prometheus Metrics
-// =============================================================================
+export {
+  recordRequestMetrics,
+  logRequest,
+  requestCounter,
+  requestDurationHistogram,
+  requestDurationBuckets,
+  MAX_METRIC_COUNTER_KEYS,
+} from "./lib/metrics.ts";
 
-const requestCounter = new Map<string, number>();
-const requestDurationHistogram = new Map<string, number>();
-const requestDurationBuckets = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
-const MAX_METRIC_COUNTER_KEYS = 2_000;
-const MAX_METRIC_HISTOGRAM_KEYS = 10_000;
-
-function normalizeMetricPath(path: string): string {
-  return path
-    .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "/:uuid")
-    .replace(/\/[a-f0-9]{16,}/gi, "/:hash")
-    .replace(/\/\d+/g, "/:id");
-}
-
-function pruneMetricsIfNeeded() {
-  if (requestCounter.size > MAX_METRIC_COUNTER_KEYS) {
-    requestCounter.clear();
-  }
-  if (requestDurationHistogram.size > MAX_METRIC_HISTOGRAM_KEYS) {
-    requestDurationHistogram.clear();
-  }
-}
-
-function incCounter(name: string, labels: Record<string, string>, value = 1) {
-  const labelStr = Object.entries(labels)
-    .map(([k, v]) => `${k}="${v}"`)
-    .join(",");
-  const key = `${name}{${labelStr}}`;
-  requestCounter.set(key, (requestCounter.get(key) || 0) + value);
-}
-
-function observeHistogram(name: string, labels: Record<string, string>, value: number) {
-  const labelStr = Object.entries(labels)
-    .map(([k, v]) => `${k}="${v}"`)
-    .join(",");
-  for (const bucket of requestDurationBuckets) {
-    const key = `${name}_bucket{le="${bucket}",${labelStr}}`;
-    if (value <= bucket) {
-      requestDurationHistogram.set(key, (requestDurationHistogram.get(key) || 0) + 1);
-    }
-  }
-  const infKey = `${name}_bucket{le="+Inf",${labelStr}}`;
-  requestDurationHistogram.set(infKey, (requestDurationHistogram.get(infKey) || 0) + 1);
-}
-
-export function recordRequestMetrics(method: string, path: string, statusCode: number, durationSec: number) {
-  pruneMetricsIfNeeded();
-  const labels = { method: method || "GET", path: normalizeMetricPath(path || "/"), status: String(statusCode) };
-  incCounter("http_requests_total", labels);
-  observeHistogram("http_request_duration_seconds", labels, durationSec);
-}
-
-function getPrometheusMetrics(): string {
-  const lines: string[] = [];
-  lines.push("# HELP http_requests_total Total HTTP requests");
-  lines.push("# TYPE http_requests_total counter");
-  for (const [key, value] of requestCounter) {
-    lines.push(`${key} ${value}`);
-  }
-  lines.push("# HELP http_request_duration_seconds HTTP request duration");
-  lines.push("# TYPE http_request_duration_seconds histogram");
-  for (const [key, value] of requestDurationHistogram) {
-    lines.push(`${key} ${value}`);
-  }
-  lines.push("# HELP active_runners Active agent runners");
-  lines.push("# TYPE active_runners gauge");
-  lines.push(`active_runners ${getRunnerPoolStats().size}`);
-  lines.push("# HELP runner_pool_size Runner pool size");
-  lines.push("# TYPE runner_pool_size gauge");
-  lines.push(`runner_pool_size ${getRunnerPoolStats().size}`);
-  lines.push("# HELP ws_clients Active WebSocket clients");
-  lines.push("# TYPE ws_clients gauge");
-  lines.push(`ws_clients ${getWsClientCount()}`);
-  lines.push("# HELP ws_connections_total Total WebSocket connections accepted");
-  lines.push("# TYPE ws_connections_total counter");
-  lines.push(`ws_connections_total ${getWsConnectionsTotal()}`);
-  const llmMetrics = getLLMMetrics();
-  lines.push("# HELP llm_latency_ms Average LLM latency in milliseconds");
-  lines.push("# TYPE llm_latency_ms gauge");
-  lines.push(`llm_latency_ms ${llmMetrics.averageLatencyMs}`);
-  lines.push("# HELP llm_p95_latency_ms P95 LLM latency in milliseconds");
-  lines.push("# TYPE llm_p95_latency_ms gauge");
-  lines.push(`llm_p95_latency_ms ${llmMetrics.p95LatencyMs}`);
-  lines.push("# HELP llm_calls_total Total LLM calls recorded");
-  lines.push("# TYPE llm_calls_total gauge");
-  lines.push(`llm_calls_total ${llmMetrics.callCount}`);
-  lines.push("# HELP llm_total_tokens Total LLM tokens consumed");
-  lines.push("# TYPE llm_total_tokens gauge");
-  lines.push(`llm_total_tokens ${llmMetrics.totalTokens}`);
-  const workerStats = getWorkerRunnerStats();
-  lines.push("# HELP active_workers Active worker agents");
-  lines.push("# TYPE active_workers gauge");
-  lines.push(`active_workers ${workerStats.activeWorkers}`);
-  lines.push("# HELP queued_workers Worker agents waiting for concurrency slot");
-  lines.push("# TYPE queued_workers gauge");
-  lines.push(`queued_workers ${workerStats.queuedWorkers}`);
-  return lines.join("\n") + "\n";
-}
-
-export function logRequest(req: IncomingMessage, res: ServerResponse, ctx: ReqContext, path: string, durationMs: number) {
-  logger.info("HTTP request", {
-    requestId: ctx.requestId,
-    method: req.method,
-    path,
-    status: res.statusCode || 200,
-    durationMs,
-    clientIp: getClientIp(req),
-  });
+async function getPrometheusMetrics(): Promise<string> {
+  const { getPrometheusMetrics: _getPrometheusMetrics } = await import("./lib/metrics.ts");
+  return _getPrometheusMetrics(taskScheduler);
 }
 
 // =============================================================================
@@ -434,8 +436,9 @@ export function serveIndex(res: ServerResponse, ctx: ReqContext) {
   }
   let html = readFileSync(indexPath, "utf-8");
   const injects: string[] = [];
-  if (API_TOKEN) {
-    injects.push(`<script>window.__OUROBOROS_API_TOKEN__=${JSON.stringify(API_TOKEN)}</script>`);
+  const token = getApiToken();
+  if (token) {
+    injects.push(`<script>window.__OUROBOROS_API_TOKEN__=${JSON.stringify(token)}</script>`);
   }
   if (appConfig.sentry.dsn) {
     injects.push(`<script>window.__SENTRY_DSN__=${JSON.stringify(appConfig.sentry.dsn)};window.__SENTRY_ENV__=${JSON.stringify(appConfig.sentry.environment)}</script>`);
@@ -517,48 +520,7 @@ async function exportTrajectories(): Promise<{ count: number; path: string }> {
   return { count: exported.length, path: OUT_PATH };
 }
 
-// =============================================================================
-// Health Status
-// =============================================================================
-
-const getHealthStatus = async () => {
-  const checks: Record<string, { ok: boolean; detail?: string }> = {};
-  let healthy = true;
-
-  // DB check
-  try {
-    await getDb().prepare("SELECT 1").get();
-    checks.db = { ok: true };
-  } catch (e) {
-    checks.db = { ok: false, detail: String(e) };
-    healthy = false;
-  }
-
-  // LLM check
-  checks.llm = { ok: !!llmCfg, detail: llmCfg ? `${llmCfg.provider}:${llmCfg.model}` : "not configured" };
-
-  // Skills check
-  let skillCount = 0;
-  try {
-    skillCount = discoverSkills().length;
-    checks.skills = { ok: true, detail: `${skillCount} skills loaded` };
-  } catch (e) {
-    checks.skills = { ok: false, detail: String(e) };
-    healthy = false;
-  }
-
-  const daemon = getDaemonStatus();
-  return {
-    healthy,
-    status: healthy ? "ok" : "degraded",
-    uptime: Math.floor(process.uptime()),
-    checks,
-    wsClients: getWsClientCount(),
-    sessions: (await listSessions()).length,
-    daemonRunning: daemon.running,
-    memory: process.memoryUsage(),
-  };
-}
+export { getHealthStatus } from "./lib/health.ts";
 
 // =============================================================================
 // Route Handlers
@@ -568,7 +530,7 @@ export {
   DB_PATH,
   OUT_DIR,
   OUT_PATH,
-  API_TOKEN,
+  getApiToken,
   ALLOWED_ORIGINS,
   MAX_BODY_SIZE,
   MIME,
@@ -592,20 +554,10 @@ export {
   getCached,
   getClientIp,
   isAuthValid,
-  requestCounter,
-  requestDurationHistogram,
-  requestDurationBuckets,
-  MAX_METRIC_COUNTER_KEYS,
-  MAX_METRIC_HISTOGRAM_KEYS,
-  normalizeMetricPath,
-  pruneMetricsIfNeeded,
-  incCounter,
-  observeHistogram,
   getPrometheusMetrics,
   notFound,
   formatAsShareGPT,
   exportTrajectories,
-  getHealthStatus,
 };
 
 export type {

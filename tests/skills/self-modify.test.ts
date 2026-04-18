@@ -60,4 +60,18 @@ describe("Self-Modify", () => {
     const fullPath = join(process.cwd(), file);
     expect(readFileSync(fullPath, "utf-8")).toBe("foo qux baz");
   });
+
+  it("mutateFile rejects path traversal outside project root", () => {
+    const res = mutateFile("../outside-project.txt", { type: "write", content: "evil" });
+    expect(res.success).toBe(false);
+    if (res.success) return;
+    expect(res.error.message).toMatch(/Path traversal detected/i);
+  });
+
+  it("mutateFile rejects absolute path outside project root", () => {
+    const res = mutateFile("/etc/passwd", { type: "write", content: "evil" });
+    expect(res.success).toBe(false);
+    if (res.success) return;
+    expect(res.error.message).toMatch(/Path traversal detected/i);
+  });
 });

@@ -15,6 +15,10 @@ export async function handleTasks(
     json(res, 200, { success: true, data: taskScheduler.getAllTasks() }, ctx);
     return true;
   }
+  if (path === "/api/tasks/queue-stats" && method === "GET") {
+    json(res, 200, { success: true, data: await taskScheduler.getQueueStats() }, ctx);
+    return true;
+  }
   const taskTriggerMatch = path.match(/^\/api\/tasks\/([^/]+)\/trigger$/);
   if (taskTriggerMatch && method === "POST") {
     const taskId = taskTriggerMatch[1];

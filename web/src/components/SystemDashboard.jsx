@@ -34,6 +34,8 @@ import { SystemControlPanel, RealtimeMetrics, AlertConsole } from './ControlUI'
 import { apiFetch, apiUrl } from '../api.js'
 import { LocaleSelector } from '../i18n/LocaleSelector.jsx'
 import { LearningInsights } from './LearningInsights'
+import { EvolutionPipelineCard } from './EvolutionPipelineCard'
+import { EvolutionControlPanel } from './EvolutionControlPanel'
 
 async function fetchImStatus() {
   const res = await apiFetch('/api/im/status')
@@ -101,10 +103,28 @@ async function fetchSelfHealing() {
   return data.data
 }
 
+async function fetchCircuitBreakers() {
+  const res = await apiFetch('/api/system/circuit-breakers')
+  const data = await res.json()
+  return data.data || []
+}
+
 async function fetchTasks() {
   const res = await apiFetch('/api/tasks')
   const data = await res.json()
   return data.data || []
+}
+
+async function fetchQueueStats() {
+  const res = await apiFetch('/api/tasks/queue-stats')
+  const data = await res.json()
+  return data.data || { pending: 0, failed: 0, delayed: 0 }
+}
+
+async function fetchBudget() {
+  const res = await apiFetch('/api/budget')
+  const data = await res.json()
+  return data.data || { totalBudget: 0, usedEstimate: 0, remainingPercent: 100, status: 'ok', llmCalls24h: 0, tokenUsage24h: 0 }
 }
 
 async function triggerTask(taskId) {
@@ -215,6 +235,12 @@ export function SystemDashboard({ status }) {
     refetchInterval: 30000,
   })
 
+  const { data: circuitBreakers = [] } = useQuery({
+    queryKey: ['circuitBreakers'],
+    queryFn: fetchCircuitBreakers,
+    refetchInterval: 5000,
+  })
+
   const llmTestMutation = useMutation({ mutationFn: testLlm })
   const backupMutation = useMutation({ mutationFn: exportBackup })
   const createBackupMutation = useMutation({
@@ -257,6 +283,18 @@ export function SystemDashboard({ status }) {
   const { data: tasks = [] } = useQuery({
     queryKey: ['tasks'],
     queryFn: fetchTasks,
+    refetchInterval: 15000,
+  })
+
+  const { data: queueStats = { pending: 0, failed: 0, delayed: 0 } } = useQuery({
+    queryKey: ['queueStats'],
+    queryFn: fetchQueueStats,
+    refetchInterval: 15000,
+  })
+
+  const { data: budget = { totalBudget: 0, usedEstimate: 0, remainingPercent: 100, status: 'ok', llmCalls24h: 0, tokenUsage24h: 0 } } = useQuery({
+    queryKey: ['budget'],
+    queryFn: fetchBudget,
     refetchInterval: 15000,
   })
 
@@ -383,6 +421,64 @@ export function SystemDashboard({ status }) {
         </div>
       </div>
 
+      {/* Budget Banner */}
+      {budget.status === 'critical' && (
+        <div className="bg-danger/10 border border-danger/30 rounded-xl p-4 flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full bg-danger animate-pulse" />
+          <div className="text-sm text-danger">
+            预算严重超支警告：剩余预算已低于 5%，系统已限制非只读操作。
+          </div>
+        </div>
+      )}
+      {budget.status === 'warning' && (
+        <div className="bg-warn/10 border border-warn/30 rounded-xl p-4 flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full bg-warn" />
+          <div className="text-sm text-warn">
+            预算警告：剩余预算已低于 20%，请注意控制 LLM 调用量。
+          </div>
+        </div>
+      )}
+
+      {/* Evolution Pipeline + Control */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <EvolutionPipelineCard />
+        <EvolutionControlPanel />
+      </div>
+
+      {/* Budget Card */}
+      <div className="bg-card border border-border rounded-xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-white">预算监控</h3>
+          <span className={`text-xs font-medium px-2 py-0.5 rounded ${budget.status === 'critical' ? 'bg-danger/20 text-danger' : budget.status === 'warning' ? 'bg-warn/20 text-warn' : 'bg-ok/20 text-ok'}`}>
+            {budget.status === 'critical' ? '严重' : budget.status === 'warning' ? '警告' : '正常'}
+          </span>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <div className="flex justify-between text-xs text-muted mb-1">
+              <span>剩余预算</span>
+              <span>{budget.remainingPercent.toFixed(1)}% (${(budget.totalBudget - budget.usedEstimate).toFixed(2)} / ${budget.totalBudget.toFixed(2)})</span>
+            </div>
+            <div className="h-2 bg-secondary/50 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full ${budget.status === 'critical' ? 'bg-danger' : budget.status === 'warning' ? 'bg-warn' : 'bg-ok'}`}
+                style={{ width: `${Math.max(0, Math.min(100, budget.remainingPercent))}%` }}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="bg-secondary/30 rounded-lg p-3">
+              <div className="text-xs text-muted">24h Token 用量</div>
+              <div className="text-white font-medium">{budget.tokenUsage24h.toLocaleString()}</div>
+            </div>
+            <div className="bg-secondary/30 rounded-lg p-3">
+              <div className="text-xs text-muted">24h LLM 调用</div>
+              <div className="text-white font-medium">{budget.llmCalls24h.toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Control UI */}
       <div className="grid grid-cols-3 gap-4">
         <div className="col-span-2 bg-card border border-border rounded-xl p-5">
@@ -469,6 +565,36 @@ export function SystemDashboard({ status }) {
             </span>
           )}
         </div>
+      </div>
+
+      {/* Circuit Breakers */}
+      <div className="bg-card border border-border rounded-xl p-5">
+        <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+          <Shield className="w-4 h-4 text-accent" />
+          LLM 熔断器状态
+        </h3>
+        {circuitBreakers.length === 0 ? (
+          <div className="text-xs text-muted">暂无熔断器记录</div>
+        ) : (
+          <div className="space-y-2">
+            {circuitBreakers.map((cb) => (
+              <div key={cb.provider} className="flex items-center justify-between text-xs py-1 border-b border-border/50 last:border-0">
+                <span className="text-white font-mono">{cb.provider}</span>
+                <div className="flex items-center gap-3">
+                  <span className={cb.state === 'OPEN' ? 'text-danger' : 'text-ok'}>
+                    {cb.state === 'OPEN' ? '已熔断' : '正常'}
+                  </span>
+                  <span className="text-muted">失败: {cb.failureCount}</span>
+                  {cb.state === 'OPEN' && (
+                    <span className="text-muted">
+                      恢复: {new Date(cb.nextRetryTime).toLocaleTimeString()}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Daemon History */}
@@ -616,6 +742,20 @@ export function SystemDashboard({ status }) {
           <Clock className="w-4 h-4 text-accent" />
           任务调度器
         </h3>
+        <div className="grid grid-cols-3 gap-3 text-xs mb-3">
+          <div className="flex justify-between py-1 border-b border-border/50">
+            <span className="text-muted">待处理</span>
+            <span className="text-white font-mono">{queueStats.pending}</span>
+          </div>
+          <div className="flex justify-between py-1 border-b border-border/50">
+            <span className="text-muted">延迟中</span>
+            <span className="text-white font-mono">{queueStats.delayed}</span>
+          </div>
+          <div className="flex justify-between py-1 border-b border-border/50">
+            <span className="text-muted">失败</span>
+            <span className={queueStats.failed > 0 ? 'text-danger font-mono' : 'text-white font-mono'}>{queueStats.failed}</span>
+          </div>
+        </div>
         <div className="space-y-2 max-h-48 overflow-y-auto">
           {tasks.length === 0 && <div className="text-xs text-muted">暂无调度任务</div>}
           {tasks.map((t) => (

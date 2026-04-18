@@ -12,8 +12,10 @@ import { spawn } from "child_process";
 import { existsSync, readdirSync, readFileSync, mkdirSync, cpSync, rmSync } from "fs";
 import { join } from "path";
 import { buildTool } from "../../core/tool-framework.ts";
+import { MARKETPLACE_CLONE_TIMEOUT_MS } from "../../web/routes/constants.ts";
 import { parseSkillFrontmatter, clearSkillsCache } from "../learning/index.ts";
 import { upsertSkillRegistry, getSkillRegistry } from "../../core/session-db.ts";
+import { scanSkill, shouldAllowInstall } from "../skills-guard/index.ts";
 import type { Skill, Result, TaskId, ToolCallContext } from "../../types/index.ts";
 import { ok, err } from "../../types/index.ts";
 
@@ -51,7 +53,7 @@ function runGitClone(source: string, cloneDir: string, branch?: string): Promise
       args.push("--branch", branch);
     }
     args.push(source, cloneDir);
-    const proc = spawn("git", args, { stdio: "pipe", timeout: 60_000 });
+    const proc = spawn("git", args, { stdio: "pipe", timeout: MARKETPLACE_CLONE_TIMEOUT_MS });
     let stderr = "";
     proc.stderr?.on("data", (d) => (stderr += d));
     proc.on("error", (err) => reject(err));
@@ -106,14 +108,21 @@ function discoverSkillsRecursively(dir: string): Skill[] {
   return nested;
 }
 
-async function installSkill(skill: Skill, targetDir: string, force = false): Promise<Result<string>> {
+async function installSkill(skill: Skill, targetDir: string, force = false, scanResult?: ReturnType<typeof scanSkill>): Promise<Result<string>> {
   const dest = join(targetDir, skill.name);
   if (existsSync(dest) && !force) {
     return err({ code: "ALREADY_EXISTS", message: `Skill ${skill.name} already installed at ${dest}. Use force=true to overwrite.` });
   }
   try {
     cpSync(skill.directory, dest, { recursive: true, force: true });
-    await upsertSkillRegistry(skill.name, dest, skill.frontmatter, skill.frontmatter.autoLoad);
+    await upsertSkillRegistry(
+      skill.name,
+      dest,
+      skill.frontmatter,
+      skill.frontmatter.autoLoad,
+      scanResult ? JSON.stringify(scanResult) : undefined,
+      scanResult?.trustLevel
+    );
     return ok(dest);
   } catch (e) {
     return err({ code: "INSTALL_ERROR", message: String(e) });
@@ -207,7 +216,15 @@ export const installSkillTool = buildTool({
             continue;
           }
         }
-        const result = await installSkill(skill, getSkillDir(), force);
+        // Security scan before installing external skill
+        const scan = scanSkill(skill.directory, "community");
+        const allow = shouldAllowInstall(scan);
+        if (allow.action === "block") {
+          failed.push({ name: skill.name, error: `Skills Guard blocked: ${allow.reason}` });
+          continue;
+        }
+
+        const result = await installSkill(skill, getSkillDir(), force, scan);
         if (result.success) {
           installed.push({ name: skill.name, path: result.data });
         } else {

@@ -59,7 +59,12 @@ describe('ChatView', () => {
     vi.stubGlobal('WebSocket', MockWebSocket)
     vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn() } })
     vi.stubGlobal('FileReader', MockFileReader)
-    vi.stubGlobal('URL', { createObjectURL: vi.fn(() => 'blob:test-url'), revokeObjectURL: vi.fn() })
+    const originalCreateObjectURL = globalThis.URL.createObjectURL
+    const originalRevokeObjectURL = globalThis.URL.revokeObjectURL
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:test-url')
+    globalThis.URL.revokeObjectURL = vi.fn()
+    vi.stubGlobal('__originalCreateObjectURL', originalCreateObjectURL)
+    vi.stubGlobal('__originalRevokeObjectURL', originalRevokeObjectURL)
     vi.stubGlobal('speechSynthesis', {
       speak: vi.fn(),
       cancel: vi.fn(),
@@ -78,6 +83,8 @@ describe('ChatView', () => {
   })
 
   afterEach(() => {
+    globalThis.URL.createObjectURL = globalThis.__originalCreateObjectURL
+    globalThis.URL.revokeObjectURL = globalThis.__originalRevokeObjectURL
     vi.unstubAllGlobals()
     delete Element.prototype.scrollIntoView
   })
@@ -381,6 +388,43 @@ describe('ChatView', () => {
       expect(utterance.text).toBe('Hello world')
     })
 
+    it('opens trace drawer and loads traces', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          json: async () => ({
+            success: true,
+            data: [
+              { role: 'assistant', content: 'Hello world', timestamp: Date.now() },
+            ],
+          }),
+        })
+        .mockResolvedValueOnce({
+          json: async () => ({
+            success: true,
+            data: [
+              { traceId: 't1', sessionId: 's1', turn: 1, timestamp: Date.now(), type: 'llm_call', actor: 'openai/gpt-4', input: { messages: [] }, latencyMs: 120, tokens: 42 },
+            ],
+          }),
+        })
+
+      render(<ChatView sessions={sessions} systemStatus={{}} />, { wrapper: Wrapper })
+      await userEvent.click(screen.getByText('Session One'))
+
+      await waitFor(() => {
+        expect(screen.getByText('Hello world')).toBeInTheDocument()
+      })
+
+      await userEvent.click(screen.getByTitle('思维链'))
+
+      await waitFor(() => {
+        expect(screen.getByText('思维链')).toBeInTheDocument()
+        expect(screen.getByText('Turn 1')).toBeInTheDocument()
+        expect(screen.getByText('llm_call')).toBeInTheDocument()
+      })
+
+      expect(mockFetch).toHaveBeenLastCalledWith('/api/sessions/s1/traces')
+    })
+
     it('shows generic file chip in attachment strip', async () => {
       mockFetch
         .mockResolvedValueOnce({ json: async () => ({ success: true, data: [] }) })
@@ -424,6 +468,45 @@ describe('ChatView', () => {
       })
     })
 
+    it('escapes script tags in user message', async () => {
+      mockFetch.mockResolvedValueOnce({
+        json: async () => ({
+          success: true,
+          data: [
+            { role: 'user', content: '<script>alert(1)</script>', timestamp: Date.now() },
+          ],
+        }),
+      })
 
+      const { container } = render(<ChatView sessions={sessions} systemStatus={{}} />, { wrapper: Wrapper })
+      await userEvent.click(screen.getByText('Session One'))
+
+      await waitFor(() => {
+        expect(container.innerHTML).not.toContain('<script>')
+      })
+    })
+
+    it('blocks unsafe image urls', async () => {
+      mockFetch.mockResolvedValueOnce({
+        json: async () => ({
+          success: true,
+          data: [
+            {
+              role: 'user',
+              content: [{ type: 'image_url', image_url: { url: 'javascript:alert(1)' } }],
+              timestamp: Date.now(),
+            },
+          ],
+        }),
+      })
+
+      render(<ChatView sessions={sessions} systemStatus={{}} />, { wrapper: Wrapper })
+      await userEvent.click(screen.getByText('Session One'))
+
+      await waitFor(() => {
+        const img = screen.getByAltText('uploaded')
+        expect(img.src === '' || !img.src.startsWith('javascript:')).toBe(true)
+      })
+    })
   })
 })

@@ -1,5 +1,6 @@
 import { getDb } from "../db-manager.ts";
-import { timedQuery } from "../telemetry.ts";
+import { timedQuery } from "../../skills/telemetry/index.ts";
+import { safeFailClosedAsync } from "../safe-utils.ts";
 import type { Result } from "../../types/index.ts";
 import { ok, err } from "../../types/index.ts";
 
@@ -41,15 +42,17 @@ export async function logModification(
 }
 
 export async function isModificationFingerprintRecent(fingerprint: string, withinMs = 24 * 60 * 60 * 1000): Promise<boolean> {
-  try {
-    const db = getDb();
-    return await timedQuery("modification:isModificationFingerprintRecent", async () => {
-      const row = await db
-        .prepare("SELECT 1 FROM modifications WHERE fingerprint = ? AND timestamp > ? LIMIT 1")
-        .get(fingerprint, Date.now() - withinMs);
-      return !!row;
-    });
-  } catch {
-    return false;
-  }
+  return safeFailClosedAsync(
+    async () => {
+      const db = getDb();
+      return await timedQuery("modification:isModificationFingerprintRecent", async () => {
+        const row = await db
+          .prepare("SELECT 1 FROM modifications WHERE fingerprint = ? AND timestamp > ? LIMIT 1")
+          .get(fingerprint, Date.now() - withinMs);
+        return !!row;
+      });
+    },
+    "isModificationFingerprintRecent DB error",
+    true // fail-closed: treat as recent to block duplicate execution
+  );
 }

@@ -15,6 +15,8 @@ import type {
   ToolPermissionLevel,
 } from "../types/index.ts";
 import { ok } from "../types/index.ts";
+import { safeFailClosed } from "../core/safe-utils.ts";
+import { classifyBashCommand } from "./bash-classifier.ts";
 
 // =============================================================================
 // Rule Matching
@@ -76,12 +78,10 @@ function evaluateCondition(actual: unknown, operator: ConditionalRule["operator"
     case "endsWith":
       return actualStr.endsWith(expectedStr);
     case "regex": {
-      try {
+      return safeFailClosed(() => {
         const regex = new RegExp(expectedStr, "i");
         return regex.test(actualStr);
-      } catch {
-        return false;
-      }
+      }, `Invalid regex in permission rule: ${expectedStr}`, false);
     }
     case "gt": {
       const actualNum = typeof actual === "number" ? actual : Number(actualStr);
@@ -177,8 +177,20 @@ export function runPermissionPipeline(
     modeDecision = input.tool.isReadOnly ? "allow" : "ask";
   }
 
+  // Layer 3a: Bash classifier safety net (downgrades allow -> ask for dangerous commands)
+  let bashDecision: ToolPermissionLevel | null = null;
+  const toolNameLower = input.tool.name.toLowerCase();
+  if (toolNameLower === "bash" || toolNameLower === "shell") {
+    const cmd = (input.toolInput as { command?: string } | undefined)?.command || "";
+    const risk = classifyBashCommand(cmd);
+    if (risk === "dangerous" || risk === "caution") {
+      bashDecision = "ask";
+    }
+  }
+
   // Merge decisions: the most restrictive wins
   const levels: ToolPermissionLevel[] = [modeDecision, toolCheck.data];
+  if (bashDecision) levels.push(bashDecision);
   if (levels.includes("deny")) return ok("deny");
   if (levels.includes("ask")) return ok("ask");
 

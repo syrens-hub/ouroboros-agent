@@ -1,144 +1,159 @@
-#!/usr/bin/env node
 /**
  * Web Agent Skill
- * 网页浏览与内容获取工具
+ * ===============
+ * Simple web fetching and content extraction tool with safety limits.
  */
 
-import https from 'https';
-import http from 'http';
-import { URL } from 'url';
+import https from "https";
+import http from "http";
+import { URL } from "url";
+import { z } from "zod";
+import { buildTool } from "../../core/tool-framework.ts";
 
-// 简单的 HTTP 请求函数
-function fetchUrl(url: string, options: { headers?: Record<string, string> } = {}): Promise<{ status: number | undefined; headers: http.IncomingHttpHeaders; content: string; url: string }> {
-    return new Promise((resolve, reject) => {
-        const parsedUrl = new URL(url);
-        const isHttps = parsedUrl.protocol === 'https:';
-        const lib = isHttps ? https : http;
-        
-        const headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            ...options.headers
-        };
-        
-        const reqOptions = {
-            hostname: parsedUrl.hostname,
-            port: parsedUrl.port || (isHttps ? 443 : 80),
-            path: parsedUrl.pathname + parsedUrl.search,
-            method: 'GET',
-            headers,
-            timeout: 15000,
-        };
-        
-        const req = lib.request(reqOptions, (res: http.IncomingMessage) => {
-            let data = '';
+const MAX_CONTENT_LENGTH = 500_000; // ~500KB of HTML
+const MAX_REDIRECTS = 5;
 
-            res.on('data', (chunk: string | Buffer) => {
-                data += chunk;
-            });
-            
-            res.on('end', () => {
-                resolve({
-                    status: res.statusCode,
-                    headers: res.headers,
-                    content: data,
-                    url: url
-                });
-            });
-        });
-        
-        req.on('error', reject);
-        req.on('timeout', () => {
-            req.destroy();
-            reject(new Error('Request timeout'));
-        });
-        
-        req.end();
+function fetchUrl(
+  url: string,
+  options: { headers?: Record<string, string>; redirectCount?: number } = {}
+): Promise<{ status: number | undefined; headers: http.IncomingHttpHeaders; content: string; url: string }> {
+  return new Promise((resolve, reject) => {
+    const redirectCount = options.redirectCount ?? 0;
+    if (redirectCount > MAX_REDIRECTS) {
+      reject(new Error("Too many redirects"));
+      return;
+    }
+
+    const parsedUrl = new URL(url);
+    const isHttps = parsedUrl.protocol === "https:";
+    const lib = isHttps ? https : http;
+
+    const headers = {
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+      ...options.headers,
+    };
+
+    const reqOptions = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: "GET",
+      headers,
+      timeout: 15000,
+    };
+
+    const req = lib.request(reqOptions, (res: http.IncomingMessage) => {
+      // Handle redirects
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const location = res.headers.location.startsWith("http")
+          ? res.headers.location
+          : `${parsedUrl.protocol}//${parsedUrl.hostname}${res.headers.location}`;
+        fetchUrl(location, { ...options, redirectCount: redirectCount + 1 }).then(resolve).catch(reject);
+        return;
+      }
+
+      let data = "";
+      let truncated = false;
+
+      res.on("data", (chunk: string | Buffer) => {
+        if (truncated) return;
+        data += chunk;
+        if (data.length > MAX_CONTENT_LENGTH) {
+          truncated = true;
+          data = data.slice(0, MAX_CONTENT_LENGTH);
+          // destroy the request to stop receiving more data
+          req.destroy();
+          resolve({
+            status: res.statusCode,
+            headers: res.headers,
+            content: data + "\n\n[Content truncated due to size limit]",
+            url,
+          });
+        }
+      });
+
+      res.on("end", () => {
+        if (!truncated) {
+          resolve({
+            status: res.statusCode,
+            headers: res.headers,
+            content: data,
+            url,
+          });
+        }
+      });
     });
+
+    req.on("error", reject);
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error("Request timeout"));
+    });
+
+    req.end();
+  });
 }
 
-// 提取网页标题
 function extractTitle(html: string) {
-    const match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    return match ? match[1].trim() : '';
+  const match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  return match ? match[1].trim() : "";
 }
 
-// 提取 meta 描述
 function extractDescription(html: string) {
-    const patterns = [
-        /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i,
-        /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i,
-        /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i,
-    ];
-    
-    for (const pattern of patterns) {
-        const match = html.match(pattern);
-        if (match) return match[1].trim();
-    }
-    return '';
+  const patterns = [
+    /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i,
+    /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i,
+  ];
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match) return match[1].trim();
+  }
+  return "";
 }
 
-// 提取所有中文文本
 function extractChineseText(html: string) {
-    // 移除 script 和 style
-    let text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
-    text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
-    text = text.replace(/<[^>]+>/g, ' ');
-    text = text.replace(/\s+/g, ' ');
-    
-    // 提取中文片段
-    const chinese = text.match(/[\u4e00-\u9fff]{2,}/g);
-    if (chinese) {
-        // 去重并限制数量
-        const unique = [...new Set(chinese)];
-        return unique.slice(0, 200).join(' ');
-    }
-    return '';
+  let text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+  text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+  text = text.replace(/<[^>]+>/g, " ");
+  text = text.replace(/\s+/g, " ");
+  const chinese = text.match(/[\u4e00-\u9fff]{2,}/g);
+  if (chinese) {
+    const unique = [...new Set(chinese)];
+    return unique.slice(0, 200).join(" ");
+  }
+  return "";
 }
 
-// 主函数
-async function main() {
-    const url = process.argv[2] || 'https://example.com';
-    
-    console.log(`正在访问: ${url}`);
-    
-    try {
-        const result = await fetchUrl(url);
-        
-        if (result.status !== 200) {
-            console.log(`HTTP ${result.status}`);
-            process.exit(1);
-        }
-        
-        const title = extractTitle(result.content);
-        const description = extractDescription(result.content);
-        const chineseText = extractChineseText(result.content);
-        
-        console.log('='.repeat(60));
-        console.log(`📄 ${title || '无标题'}`);
-        console.log('='.repeat(60));
-        
-        if (description) {
-            console.log(`\n📝 描述: ${description}`);
-        }
-        
-        console.log(`\n🔗 链接数: ${(result.content.match(/<a /g) || []).length}`);
-        console.log(`🖼️ 图片数: ${(result.content.match(/<img /g) || []).length}`);
-        console.log(`📊 内容长度: ${result.content.length} 字符`);
-        
-        if (chineseText && chineseText.length > 20) {
-            console.log(`\n📄 提取的中文内容:`);
-            console.log('-'.repeat(40));
-            console.log(chineseText.substring(0, 2000));
-        } else {
-            console.log('\n⚠️ 未提取到有效中文内容（可能是反爬虫保护或非中文页面）');
-        }
-        
-    } catch (error: unknown) {
-        console.error(`错误: ${error instanceof Error ? error.message : String(error)}`);
-        process.exit(1);
-    }
-}
+export const webAgentTool = buildTool({
+  name: "web_agent",
+  description: "Fetch a web page and extract title, description, and key Chinese text. Respects size limits and redirect limits.",
+  inputSchema: z.object({
+    url: z.string().url(),
+  }),
+  isReadOnly: true,
+  isConcurrencySafe: true,
+  async call(input) {
+    const result = await fetchUrl(input.url);
 
-main();
+    const title = extractTitle(result.content);
+    const description = extractDescription(result.content);
+    const chineseText = extractChineseText(result.content);
+
+    return {
+      success: true,
+      data: {
+        url: result.url,
+        status: result.status,
+        title,
+        description,
+        linkCount: (result.content.match(/<a /g) || []).length,
+        imageCount: (result.content.match(/<img /g) || []).length,
+        contentLength: result.content.length,
+        chineseText: chineseText || undefined,
+      },
+    };
+  },
+});

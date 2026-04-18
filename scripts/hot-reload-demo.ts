@@ -13,7 +13,7 @@
 
 import { readFileSync, writeFileSync, copyFileSync } from "fs";
 import { join } from "path";
-import { watchModule } from "../core/hot-reload.ts";
+import { watchModule } from "../skills/hot-reload/index.ts";
 import { createToolPool } from "../core/tool-framework.ts";
 import { META_RULE_AXIOM } from "../core/rule-engine.ts";
 

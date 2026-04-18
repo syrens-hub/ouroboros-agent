@@ -1,5 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
+import { PAYLOAD_TOO_LARGE } from "../constants.ts";
 import { createSession, listSessions, getMessages } from "../../../core/session-db.ts";
+import { getTraceEvents } from "../../../core/repositories/trajectory.ts";
 import { removeRunner, resolveConfirm } from "../../runner-pool.ts";
 import {
   json,
@@ -39,6 +41,16 @@ export async function handleSessions(
     return true;
   }
 
+  // Traces
+  const tracesMatch = path.match(/^\/api\/sessions\/([^/]+)\/traces$/);
+  if (tracesMatch && method === "GET") {
+    const q = new URL(req.url || "", "http://localhost");
+    const turn = q.searchParams.has("turn") ? parseInt(q.searchParams.get("turn")!, 10) : undefined;
+    const result = await getTraceEvents(tracesMatch[1], turn);
+    json(res, result.success ? 200 : 500, result, ctx);
+    return true;
+  }
+
   // Messages
   const messagesMatch = path.match(/^\/api\/sessions\/([^/]+)\/messages$/);
   if (messagesMatch && method === "GET") {
@@ -63,7 +75,7 @@ export async function handleSessions(
     try {
       body = await readBody(req);
     } catch (e) {
-      if (e instanceof Error && e.message === "PAYLOAD_TOO_LARGE") {
+      if (e instanceof Error && e.message === PAYLOAD_TOO_LARGE) {
         json(res, 413, { success: false, error: { message: "Payload too large" } }, ctx);
         return true;
       }

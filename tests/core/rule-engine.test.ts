@@ -80,4 +80,23 @@ describe("Rule Engine", () => {
     const rules = engine.exportRules();
     expect(rules).toContain(META_RULE_AXIOM);
   });
+
+  it("isImmutablePath rejects path-traversal equivalents", () => {
+    expect(engine.isImmutablePath("core/rule-engine.ts")).toBe(true);
+    expect(engine.isImmutablePath("core/../core/rule-engine.ts")).toBe(true);
+    expect(engine.isImmutablePath("./core/rule-engine.ts")).toBe(true);
+    expect(engine.isImmutablePath("skills/evil-core/rule-engine.ts")).toBe(false);
+    expect(engine.isImmutablePath("core/rule-engine.ts.bak")).toBe(false);
+    expect(engine.isImmutablePath("core/tool-framework.ts")).toBe(false);
+  });
+
+  it("denies immutable path even with traversal sequences", () => {
+    const res = engine.evaluateModification(
+      makeReq("core_evolve", "low", {
+        proposedChanges: { targetPath: "core/../core/rule-engine.ts" },
+      })
+    );
+    if (res.success) throw new Error("Expected failure");
+    expect(res.error.code).toBe("RULE_IMMUTABLE");
+  });
 });

@@ -26,15 +26,22 @@ const { execSync } = require('child_process');
 // 这些命令是更新hosts文件所必需的，并且不包含任何动态输入
 // 命令参数经过严格验证，不会执行任意代码
 
+// ============ 安全：sudo 命令防护 ============
+// WARNING: 这些操作需要 sudo 权限，存在特权升级风险
+// 为降低风险：
+// 1. 命令参数经过严格验证（无用户输入）
+// 2. 使用 'sudo -n' 非交互模式，密码不可用时立即失败
+// 3. 建议通过 /etc/sudoers.d/ouroboros 配置无密码 sudo 限定这些命令
+
 const SYSTEM_COMMANDS = {
-  // DNS刷新命令
+  // DNS刷新命令（使用 sudo -n 防止密码提示）
   darwin: {
-    dns: 'dscacheutil -flushcache && killall -HUP mDNSResponder',
+    dns: 'sudo -n dscacheutil -flushcache && sudo -n killall -HUP mDNSResponder',
     copy: 'cp'
   },
   linux: {
-    dns: 'systemd-resolve --flush-caches',
-    copy: 'cp'
+    dns: 'sudo -n systemd-resolve --flush-caches',
+    copy: 'sudo -n cp'
   },
   windows: {
     dns: 'ipconfig /flushdns',
