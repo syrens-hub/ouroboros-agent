@@ -7,24 +7,22 @@ on:
     branches: [main, master]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.node-version }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  check:
+  test-node20:
+    name: Test (Node 20)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [20, 22]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 20
 
-      - name: Cache node_modules, npm and vitest
+      - name: Cache node_modules
         uses: actions/cache@v4
         id: cache-deps
         with:
@@ -32,10 +30,9 @@ jobs:
             node_modules
             web/node_modules
             ~/.npm
-            node_modules/.cache
-          key: ${{ runner.os }}-node-${{ matrix.node-version }}-${{ hashFiles('package-lock.json', 'web/package-lock.json') }}
+          key: ${{ runner.os }}-node-20-${{ hashFiles('package-lock.json', 'web/package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-node-${{ matrix.node-version }}-
+            ${{ runner.os }}-node-20-
 
       - name: Install dependencies
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -67,26 +64,170 @@ jobs:
             fi
           fi
 
-      - name: Test with coverage
-        run: npm run test:coverage 2>&1 | tee test-coverage.log
+      # 方案 C: 先用无 coverage 模式运行测试，排除 coverage 插件导致崩溃的可能
+      - name: Test (no coverage)
+        run: npm test -- --run 2>&1 | tee test-output-node20.log
         continue-on-error: true
+
+      # 方案 A: 上传测试日志，即使崩溃也能获取输出
+      - name: Upload test output
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-output-node20
+          path: test-output-node20.log
+
+      - name: Test with coverage
+        run: npm run test:coverage 2>&1 | tee coverage-output-node20.log
+        continue-on-error: true
+
+      - name: Upload coverage output
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-output-node20
+          path: coverage-output-node20.log
 
       - name: Build web
         run: cd web && npm run build
 
-      # - name: Set up Docker Buildx
-      #   uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      # - name: Build Docker image
-      #   uses: docker/build-push-action@v6
-      #   with:
-      #     context: .
-      #     push: false
-      #     tags: ouroboros-agent:test
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: ouroboros-agent:test
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
-        if: matrix.node-version == 20 && success()
         with:
-          name: coverage-report
+          name: coverage-report-node20
           path: coverage/
+
+      # 最终检查：如果测试步骤实际失败了，标记 job 为失败
+      - name: Assert tests passed
+        run: |
+          if [ -f test-output-node20.log ]; then
+            if grep -qE "(failed|FAIL|Error: Tests crashed)" test-output-node20.log; then
+              echo "Tests failed in no-coverage mode"
+              exit 1
+            fi
+          fi
+          if [ -f coverage-output-node20.log ]; then
+            if grep -qE "(failed|FAIL|Error: Tests crashed)" coverage-output-node20.log; then
+              echo "Tests failed in coverage mode"
+              exit 1
+            fi
+          fi
+
+  test-node22:
+    name: Test (Node 22)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        id: cache-deps
+        with:
+          path: |
+            node_modules
+            web/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-22-${{ hashFiles('package-lock.json', 'web/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-22-
+
+      - name: Install dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Install web dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: cd web && npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Security audit
+        run: npm run audit:ci || true
+
+      - name: Secrets scan
+        run: npm run secrets:scan || true
+
+      - name: Check runtime data bloat
+        run: |
+          if [ -d .ouroboros ]; then
+            SIZE=$(du -sm .ouroboros | cut -f1)
+            echo ".ouroboros size: ${SIZE}MB"
+            if [ "$SIZE" -gt 100 ]; then
+              echo "::warning::.ouroboros directory is larger than 100MB (${SIZE}MB). Run 'npm run cleanup' to prune old backups and checkpoints."
+            fi
+          fi
+
+      - name: Test (no coverage)
+        run: npm test -- --run 2>&1 | tee test-output-node22.log
+        continue-on-error: true
+
+      - name: Upload test output
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-output-node22
+          path: test-output-node22.log
+
+      - name: Test with coverage
+        run: npm run test:coverage 2>&1 | tee coverage-output-node22.log
+        continue-on-error: true
+
+      - name: Upload coverage output
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-output-node22
+          path: coverage-output-node22.log
+
+      - name: Build web
+        run: cd web && npm run build
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: ouroboros-agent:test
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-node22
+          path: coverage/
+
+      - name: Assert tests passed
+        run: |
+          if [ -f test-output-node22.log ]; then
+            if grep -qE "(failed|FAIL|Error: Tests crashed)" test-output-node22.log; then
+              echo "Tests failed in no-coverage mode"
+              exit 1
+            fi
+          fi
+          if [ -f coverage-output-node22.log ]; then
+            if grep -qE "(failed|FAIL|Error: Tests crashed)" coverage-output-node22.log; then
+              echo "Tests failed in coverage mode"
+              exit 1
+            fi
+          fi
