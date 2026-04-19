@@ -1,3 +1,4 @@
+import "../../../skills/evolution-core/init.ts";
 import { describe, it, expect } from "vitest";
 import { runEvolutionConsensus } from "../../../skills/evolution-consensus/index.ts";
 import type { EvolutionProposal } from "../../../skills/evolution-orchestrator/index.ts";

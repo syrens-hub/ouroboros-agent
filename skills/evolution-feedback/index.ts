@@ -14,11 +14,8 @@ import { eventBus } from "../../core/event-bus.ts";
 import { logger } from "../../core/logger.ts";
 import { getDb } from "../../core/db-manager.ts";
 import type { DbAdapter } from "../../core/db-adapter.ts";
-import { evolutionVersionManager } from "../evolution-version-manager/index.ts";
-import { proposeEvolution } from "../evolution-orchestrator/index.ts";
+import { use } from "../evolution-core/registry.ts";
 import type { EvolutionProposal, PipelineResult } from "../../types/evolution.ts";
-import { SelfHealer } from "../self-healing/self-healer.ts";
-import { recordEvolutionMemory, queryEvolutionMemory, deriveLesson } from "../evolution-memory/index.ts";
 import type { KnowledgeBase } from "../knowledge-base/index.ts";
 
 export interface FeedbackConfig {
@@ -71,6 +68,19 @@ function ensureInitialized(): void {
   initFeedbackTables(db);
 }
 
+function getVersionManager() {
+  return use<typeof import("../evolution-version-manager/index.ts")>("versionManager");
+}
+function getOrchestrator() {
+  return use<typeof import("../evolution-orchestrator/index.ts")>("orchestrator");
+}
+function getSelfHealing() {
+  return use<typeof import("../self-healing/index.ts")>("selfHealing");
+}
+function getMemory() {
+  return use<typeof import("../evolution-memory/index.ts")>("memory");
+}
+
 /**
  * Register the feedback loop as an EventBus listener.
  * Call this once at application startup.
@@ -121,6 +131,7 @@ export async function handleEvolutionFailure(
 
   // 1. Rollback to parent version if available
   if (config.autoRollback) {
+    const { evolutionVersionManager } = getVersionManager();
     const target = evolutionVersionManager.getRollbackTarget(versionId);
     if (target) {
       result.rollbackPerformed = true;
@@ -136,6 +147,7 @@ export async function handleEvolutionFailure(
   }
 
   // 2. Self-healer diagnosis
+  const { SelfHealer } = getSelfHealing();
   const healer = new SelfHealer({ enableAutoRollback: false });
   const anomaly = healer.diagnose(new Error(errorMsg), { stage, versionId });
   const healResult = await healer.attemptRepair({
@@ -158,10 +170,12 @@ export async function handleEvolutionFailure(
   };
 
   // 3. Query evolution memory for similar failures
+  const { evolutionVersionManager } = getVersionManager();
   const currentVersion = evolutionVersionManager.getVersion(versionId);
   let lessons: string[] = [];
   if (kb && currentVersion) {
     try {
+      const { queryEvolutionMemory } = getMemory();
       const hints = await queryEvolutionMemory(
         kb,
         {
@@ -179,7 +193,7 @@ export async function handleEvolutionFailure(
   }
 
   // 4. Generate fix proposal
-  const fixProposal = generateFixProposal(currentVersion, stage, errorMsg, lessons);
+  const fixProposal = generateFixProposal(currentVersion ?? null, stage, errorMsg, lessons);
   result.fixProposal = fixProposal;
 
   // 5. Persist feedback record
@@ -200,6 +214,7 @@ export async function handleEvolutionFailure(
 
   // 6. Optionally auto-repropose
   if (config.autoRepropose && fixProposal.adjustedProposal.filesChanged.length > 0) {
+    const { proposeEvolution } = getOrchestrator();
     const repropose = proposeEvolution(fixProposal.adjustedProposal, "feedback-loop");
     if (repropose.success) {
       result.reproposed = true;
@@ -213,6 +228,7 @@ export async function handleEvolutionFailure(
   // Record failure to KB memory
   if (kb && currentVersion) {
     try {
+      const { recordEvolutionMemory, deriveLesson } = getMemory();
       const pipelineResult: PipelineResult = {
         success: false,
         stage,
@@ -246,7 +262,7 @@ export async function handleEvolutionFailure(
 }
 
 function generateFixProposal(
-  version: ReturnType<typeof evolutionVersionManager.getVersion>,
+  version: { filesChanged?: string[]; description?: string } | null,
   stage: string,
   errorMsg: string,
   lessons: string[]

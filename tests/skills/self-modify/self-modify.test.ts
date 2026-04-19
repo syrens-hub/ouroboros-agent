@@ -349,13 +349,14 @@ describe("applyDiffs", () => {
     vi.mocked(evaluateConstitutionGuard).mockReturnValueOnce(
       err({ code: "CONSTITUTION_VIOLATION", message: "Mock guard block" })
     );
+    const fp = fixturePath("guard-block.ts");
     const result = applyDiffs(
-      { "some/innocent.ts": "content" },
+      { [fp]: "content" },
       { skipSyntaxCheck: true }
     );
     if (result.success) throw new Error("expected failure");
     expect(result.filesFailed).toEqual([
-      { path: "some/innocent.ts", error: "Mock guard block" },
+      { path: fp, error: "Mock guard block" },
     ]);
   });
 

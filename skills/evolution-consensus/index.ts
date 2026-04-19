@@ -6,11 +6,10 @@
  * aggregates them into a single recommendation.
  */
 
-import { runConsensus, type AgentAnswer } from "../crewai/consensus-engine.ts";
-import { semanticConstitutionChecker } from "../semantic-constitution/index.ts";
-import { mapFilesToTests } from "../incremental-test/index.ts";
-import { budgetController } from "../safety-controls/index.ts";
+import { use } from "../evolution-core/registry.ts";
 import type { EvolutionProposal } from "../../types/evolution.ts";
+import type { AgentAnswer } from "../crewai/consensus-engine.ts";
+import type { SafetyCheckResult } from "../semantic-constitution/index.ts";
 
 export type ReviewVerdict = "approve" | "reject" | "delay";
 
@@ -32,7 +31,20 @@ export interface ConsensusReviewResult {
 export interface ReviewerConfig {
   role: string;
   weight: number;
-  evaluate: (proposal: EvolutionProposal, constCheck: ReturnType<typeof semanticConstitutionChecker.checkEvolution>) => ReviewerVote;
+  evaluate: (proposal: EvolutionProposal, constCheck: SafetyCheckResult) => ReviewerVote;
+}
+
+function getSemanticConstitution() {
+  return use<typeof import("../semantic-constitution/index.ts")>("semanticConstitution");
+}
+function getIncrementalTest() {
+  return use<typeof import("../incremental-test/index.ts")>("incrementalTest");
+}
+function getSafetyControls() {
+  return use<typeof import("../safety-controls/index.ts")>("safetyControls");
+}
+function getCrewai() {
+  return use<typeof import("../crewai/consensus-engine.ts")>("crewai");
 }
 
 // ─── Built-in Reviewers ─────────────────────────────────────────────────────
@@ -71,7 +83,7 @@ const securityReviewer: ReviewerConfig = {
 const architectureReviewer: ReviewerConfig = {
   role: "architecture",
   weight: 1.0,
-  evaluate(proposal, constCheck) {
+  evaluate(proposal, _constCheck) {
     const totalLines = proposal.linesAdded + proposal.linesRemoved;
     const fileCount = proposal.filesChanged.length;
 
@@ -104,6 +116,7 @@ const testingReviewer: ReviewerConfig = {
   role: "testing",
   weight: 0.9,
   evaluate(proposal) {
+    const { mapFilesToTests } = getIncrementalTest();
     const mappedTests = mapFilesToTests(proposal.filesChanged);
     if (mappedTests.length === 0) {
       return {
@@ -126,6 +139,7 @@ const costReviewer: ReviewerConfig = {
   role: "cost",
   weight: 0.8,
   evaluate(proposal) {
+    const { budgetController } = getSafetyControls();
     const budget = budgetController.getStatus();
     if (proposal.estimatedCostUsd && proposal.estimatedCostUsd > budget.dailyRemaining) {
       return {
@@ -161,6 +175,7 @@ export function runEvolutionConsensus(
   reviewers: ReviewerConfig[] = DEFAULT_REVIEWERS
 ): ConsensusReviewResult {
   // Run semantic check once for all reviewers
+  const { semanticConstitutionChecker } = getSemanticConstitution();
   const constCheck = semanticConstitutionChecker.checkEvolution({
     filesChanged: proposal.filesChanged,
     description: proposal.description,
@@ -192,6 +207,7 @@ export function runEvolutionConsensus(
     confidence: v.confidence,
   }));
 
+  const { runConsensus } = getCrewai();
   const consensus = runConsensus(answers);
   if (!consensus) {
     return {

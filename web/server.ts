@@ -6,6 +6,7 @@
  */
 
 import "dotenv/config";
+import "../skills/evolution-core/init.ts";
 import { type Server, createServer } from "http";
 import { existsSync, statSync, readdirSync, rmdirSync, unlinkSync } from "fs";
 import { join } from "path";

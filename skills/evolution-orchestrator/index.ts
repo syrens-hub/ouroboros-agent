@@ -7,15 +7,9 @@
  *   Propose -> Semantic Check -> Consensus Review -> Safety Gates -> Approval -> Version -> Execute -> Test
  */
 
-import { SemanticConstitutionChecker } from "../semantic-constitution/index.ts";
-import { evolutionLock, changeFreezePeriod, budgetController } from "../safety-controls/index.ts";
-import { approvalGenerator, type ApprovalRequest, type SafetyStatus } from "../approval/index.ts";
-import { evolutionVersionManager } from "../evolution-version-manager/index.ts";
-import { incrementalTestRunner } from "../incremental-test/index.ts";
-import { runEvolutionConsensus } from "../evolution-consensus/index.ts";
+import { use } from "../evolution-core/registry.ts";
+import type { SafetyStatus } from "../approval/index.ts";
 import type { KnowledgeBase } from "../knowledge-base/index.ts";
-import { recordEvolutionMemory, queryEvolutionMemory, deriveLesson } from "../evolution-memory/index.ts";
-import { applyDiffs, restoreBackup } from "../self-modify/index.ts";
 import { logger } from "../../core/logger.ts";
 import { getDistributedLock } from "../../core/distributed-lock.ts";
 import { appConfig } from "../../core/config.ts";
@@ -23,9 +17,35 @@ import { appConfig } from "../../core/config.ts";
 import type { EvolutionProposal, PipelineResult, PipelineOptions } from "./types.ts";
 export type { EvolutionProposal, PipelineResult, PipelineOptions } from "./types.ts"; // re-export for backward compatibility
 
-const constitutionChecker = new SemanticConstitutionChecker();
+// Lazy resolution of evolution-cluster dependencies via the DI registry.
+// This avoids eager module-loading failures when init.ts hasn't run yet.
+function getSemanticConstitution() {
+  return use<typeof import("../semantic-constitution/index.ts")>("semanticConstitution");
+}
+function getSafetyControls() {
+  return use<typeof import("../safety-controls/index.ts")>("safetyControls");
+}
+function getApproval() {
+  return use<typeof import("../approval/index.ts")>("approval");
+}
+function getVersionManager() {
+  return use<typeof import("../evolution-version-manager/index.ts")>("versionManager");
+}
+function getIncrementalTest() {
+  return use<typeof import("../incremental-test/index.ts")>("incrementalTest");
+}
+function getConsensus() {
+  return use<typeof import("../evolution-consensus/index.ts")>("consensus");
+}
+function getMemory() {
+  return use<typeof import("../evolution-memory/index.ts")>("memory");
+}
+function getSelfModify() {
+  return use<typeof import("../self-modify/index.ts")>("selfModify");
+}
 
 function buildSafetyStatus(skipLock = false): SafetyStatus {
+  const { changeFreezePeriod, budgetController, evolutionLock } = getSafetyControls();
   const budget = budgetController.getStatus();
   return {
     frozen: changeFreezePeriod.isFrozen(),
@@ -40,6 +60,9 @@ function buildSafetyStatus(skipLock = false): SafetyStatus {
  * and creates a version record.
  */
 export function proposeEvolution(proposal: EvolutionProposal, ownerId: string, opts?: PipelineOptions): PipelineResult {
+  const { SemanticConstitutionChecker } = getSemanticConstitution();
+  const constitutionChecker = new SemanticConstitutionChecker();
+
   // Stage 1: Semantic constitution check (no lock needed)
   const constResult = constitutionChecker.checkEvolution({
     filesChanged: proposal.filesChanged,
@@ -67,6 +90,7 @@ export function proposeEvolution(proposal: EvolutionProposal, ownerId: string, o
   let consensusRec: PipelineResult["consensus"];
 
   if (!opts?.skipConsensus) {
+    const { runEvolutionConsensus } = getConsensus();
     const consensus = runEvolutionConsensus(proposal);
     consensusRec = {
       recommendation: consensus.recommendation,
@@ -89,6 +113,7 @@ export function proposeEvolution(proposal: EvolutionProposal, ownerId: string, o
   }
 
   // Stage 3: Budget check
+  const { budgetController } = getSafetyControls();
   if (proposal.estimatedCostUsd && !budgetController.checkBudget(proposal.estimatedCostUsd)) {
     return {
       success: false,
@@ -100,6 +125,7 @@ export function proposeEvolution(proposal: EvolutionProposal, ownerId: string, o
 
   // Stage 4: Approval routing (lock not yet acquired)
   const safety = buildSafetyStatus(true);
+  const { approvalGenerator } = getApproval();
   const approval = approvalGenerator.generateApproval(
     {
       filesChanged: proposal.filesChanged,
@@ -122,6 +148,7 @@ export function proposeEvolution(proposal: EvolutionProposal, ownerId: string, o
   }
 
   // Stage 5: Acquire evolution lock
+  const { evolutionLock } = getSafetyControls();
   if (!evolutionLock.acquire(ownerId)) {
     return {
       success: false,
@@ -133,6 +160,7 @@ export function proposeEvolution(proposal: EvolutionProposal, ownerId: string, o
 
   try {
     // Stage 6: Version record (with diffs)
+    const { evolutionVersionManager } = getVersionManager();
     const version = evolutionVersionManager.createVersion({
       filesChanged: proposal.filesChanged,
       riskScore,
@@ -178,6 +206,7 @@ export async function proposeEvolutionWithMemory(
 
   // Query memory for similar evolutions (best-effort, non-blocking on failure)
   try {
+    const { queryEvolutionMemory } = getMemory();
     const hints = await queryEvolutionMemory(kb, proposal, 3);
     if (hints.length > 0) {
       result.memoryHints = hints.map((h) => h.lesson ?? h.content).filter(Boolean);
@@ -199,6 +228,7 @@ export async function resolveAndExecute(
   ownerId: string,
   approved: boolean
 ): Promise<PipelineResult> {
+  const { approvalGenerator } = getApproval();
   const resolved = approvalGenerator.resolveApproval(approvalId, approved);
   if (!resolved) {
     return {
@@ -244,6 +274,7 @@ export async function executeEvolution(
 
   try {
     // Stage 1: Re-acquire local lock
+    const { evolutionLock } = getSafetyControls();
     if (!evolutionLock.acquire(ownerId)) {
       return {
         success: false,
@@ -254,6 +285,7 @@ export async function executeEvolution(
 
     try {
       // Stage 2: Mark version as applied
+      const { evolutionVersionManager } = getVersionManager();
       const applied = evolutionVersionManager.markApplied(versionId);
       if (!applied) {
         return {
@@ -267,6 +299,7 @@ export async function executeEvolution(
       const version = evolutionVersionManager.getVersion(versionId);
       let backupPath: string | undefined;
       if (version?.diffs && Object.keys(version.diffs).length > 0) {
+        const { applyDiffs } = getSelfModify();
         const applyResult = applyDiffs(version.diffs, { skipSyntaxCheck: false, skipBackup: false });
         backupPath = applyResult.backupPath;
         if (!applyResult.success) {
@@ -287,9 +320,11 @@ export async function executeEvolution(
       }
 
       // Stage 4: Record freeze period
+      const { changeFreezePeriod } = getSafetyControls();
       changeFreezePeriod.recordEvolution();
 
       // Stage 5: Run incremental tests
+      const { incrementalTestRunner } = getIncrementalTest();
       const testResult = await incrementalTestRunner.run({
         changedFiles,
         mode: "incremental",
@@ -301,6 +336,7 @@ export async function executeEvolution(
       // Stage 7: If tests failed, roll back diffs
       if (testResult.status === "failed" && backupPath) {
         try {
+          const { restoreBackup } = getSelfModify();
           restoreBackup(`evo-${Date.now()}`, backupPath);
           logger.info("Rolled back diffs due to test failure", { versionId });
         } catch (e) {
@@ -316,6 +352,7 @@ export async function executeEvolution(
       }
 
       // Stage 8: Record budget if needed (placeholder — actual cost tracked elsewhere)
+      const { budgetController } = getSafetyControls();
       budgetController.recordSpend(0.01); // nominal tracking cost
 
       logger.info("Evolution executed and tested", {
@@ -353,6 +390,7 @@ export async function executeEvolutionWithMemory(
 
   // Record memory (best-effort)
   try {
+    const { deriveLesson, recordEvolutionMemory } = getMemory();
     const lesson = deriveLesson(proposal, result);
     await recordEvolutionMemory(kb, {
       proposal,

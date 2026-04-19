@@ -1,3 +1,4 @@
+import "../../../skills/evolution-core/init.ts";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { getDb, resetDbSingleton } from "../../../core/db-manager.ts";
 import { hookRegistry } from "../../../core/hook-system.ts";
