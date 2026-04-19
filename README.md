@@ -3,8 +3,9 @@
 <p align="center">
   <img src="https://img.shields.io/badge/version-0.9.0-blue" alt="version" />
   <img src="https://img.shields.io/badge/Node.js-%3E%3D20.0.0-brightgreen" alt="node" />
+  <img src="https://img.shields.io/badge/coverage-76.9%25-success" alt="coverage" />
+  <img src="https://img.shields.io/badge/tests-1226%20passed-purple" alt="tests" />
   <img src="https://img.shields.io/badge/license-MIT-yellow" alt="license" />
-  <img src="https://img.shields.io/badge/tests-vitest-purple" alt="tests" />
 </p>
 
 > **一句话定位**：一个能自己改自己代码、自己提交 Git、自己持续进化的开源 AI 系统，目标是做「有持久身份的连续数字实体」，不是一次性脚本。
@@ -49,7 +50,7 @@ Ouroboros 用这套机制破局：
    9 条原则，硬约束：不能删核心身份、不能支付、不能违法，运行时真会遵守。
 
 2. **后台意识循环**
-   低开销模型，无任务时自动总结、规划、更知识库。
+   低开销模型，无任务时自动总结、规划、更新知识库。
 
 3. **任务系统**
    任务分解 + 单消费者路由，避免重复执行浪费预算。
@@ -71,7 +72,7 @@ Ouroboros 用这套机制破局：
 git clone https://github.com/your-org/ouroboros-agent.git
 cd ouroboros-agent
 
-# 2. 安装依赖
+# 2. 安装依赖（npm workspaces 自动管理 skills）
 npm install
 # 若 better-sqlite3 编译失败：
 npm rebuild better-sqlite3
@@ -95,7 +96,7 @@ npx tsx scripts/test-llm.ts
 ### 运行测试
 
 ```bash
-# 后端单元测试
+# 后端单元测试（1,226 tests, coverage 76.9%）
 npm test
 
 # 前端单元测试
@@ -103,6 +104,16 @@ cd web && npm test
 
 # E2E 测试
 npm run e2e
+```
+
+### 数据清理
+
+```bash
+# 查看会删除什么
+npm run cleanup:dry-run
+
+# 执行清理（按保留策略删除旧备份和检查点）
+npm run cleanup
 ```
 
 ---
@@ -125,54 +136,68 @@ npm run e2e
 ## 架构概览
 
 ```
-core/                   # Immutable kernel (3 sacred files)
-  rule-engine.ts        # The only unmodifiable floor
+core/                   # Immutable kernel — 严格禁止 skills/ 反向依赖
+  rule-engine.ts        # 自我修改的最高裁决者（唯一不可变地板）
   tool-framework.ts     # Fail-closed Tool builder + StreamingToolExecutor
   permission-gate.ts    # 3-layer permission pipeline
-  db-manager.ts         # Connection singleton + migrations (SQLite & PostgreSQL)
-  db-adapter.ts         # DbAdapter interface for pluggable backends
-  db-pg.ts              # PostgreSQL adapter (runtime switchable)
-  config.ts             # Central configuration
-  logger.ts             # Structured logging
-  session-db.ts         # Barrel re-export for backward compatibility
+  permission-engine.ts  # 多源规则引擎（CLI → 项目 → 会话 → 设置）
+  constitution-guard.ts # 运行时宪法守卫（硬编码规则 + 路径验证）
+  db-manager.ts         # 连接单例 + 迁移（SQLite & PostgreSQL）
+  db-adapter.ts         # DbAdapter 接口，支持运行时切换后端
+  event-bus.ts          # 生产级事件总线（重试 + 退避 + 死信队列）
+  hook-system.ts        # 可扩展 Hook Registry
+  smart-cache.ts        # LRU + TTL + 大小感知的内存缓存
+  security-framework.ts # 审计日志 + 路径验证 + 速率限制
+  config.ts             # 中心化配置（环境变量驱动）
+  logger.ts             # 结构化日志
   index.ts              # Core barrel exports
 
-skills/                 # Everything is a Skill — including the Agent Loop
-  agent-loop/           # Main agent loop (replaceable)
-  autonomous-evolution/ # Background daemon that auto-creates skills
-  backup/               # Database backup & restore
-  browser/              # Playwright-based browser automation + Computer Use
-  budget-guard/         # Real-time budget tracking and automatic circuit-breaking
-  checkpoint/           # Shadow-git filesystem snapshots
-  hot-reload/           # File watcher for skill auto-reload
-  i18n/                 # 13-locale internationalization
-  knowledge-base/       # RAG: ingest + embedding + vector search
-  learning/             # Trajectory compression + skill filesystem ops
-  mcp/                  # MCP connection manager + output storage + utils
-  notification/         # Global notification bus (EventEmitter)
-  sandbox/              # Subagent context isolation
-  self-healing/         # Anomaly detection, snapshots, rollback, repair
-  rate-limiter/         # Token-bucket rate limiting (API + per-user)
-  self-modify/          # Gateway for all self-mutations
-  skill-versioning/     # Skill snapshot, restore, and version history
-  skills-guard/         # Runtime validation of skill safety constraints
-  smart-cache/          # LRU cache with TTL and size eviction
-  task-scheduler/       # Cron / interval / delayed tasks with retries
-  telemetry/            # OpenTelemetry spans, metrics, OTLP exporter
-  webhooks/             # Webhook registration & delivery
+skills/                 # 一切皆 Skill — 包括 Agent Loop 本身
+  agent-loop/           # 主循环（可替换）
+  autonomous-evolution/ # 后台守护进程：自动创建 skill
+  backup/               # 数据库备份 & 恢复 + 自动保留策略
+  browser/              # Playwright 浏览器自动化 + Computer Use
+  budget-guard/         # 实时预算追踪 + 自动熔断
+  checkpoint/           # Shadow-git 文件系统快照
+  evolution-core/       # Evolution 技能群 DI 注册表 + 领域边界
+  evolution-orchestrator/   # 进化流水线协调器
+  evolution-feedback/       # 失败反馈 + 自动回滚 + 修复提案
+  evolution-consensus/      # 多智能体共识审查
+  hot-reload/           # Skill 文件变更自动重载
+  i18n/                 # 13 语言国际化
+  knowledge-base/       # RAG：ingest + embedding + 向量搜索
+  learning/             # 轨迹压缩 + skill 文件系统操作
+  mcp/                  # MCP 连接管理器
+  notification/         # 全局通知总线（EventBus 适配器）
+  sandbox/              # Subagent 上下文隔离
+  self-healing/         # 异常检测、快照、回滚、修复
+  self-modify/          # 所有自我修改的统一网关
+  skill-versioning/     # Skill 快照、恢复、版本历史
+  task-scheduler/       # Cron / 间隔 / 延迟任务 + 重试
+  telemetry/            # OpenTelemetry spans、指标、OTLP 导出
+  webhooks/             # Webhook 注册 & 投递
 
 extensions/
-  im/mock-chat/index.ts # Mock IM channel implementing ChannelPlugin
-  im/feishu/index.ts    # Feishu/Lark integration
-  im/telegram/index.ts  # Telegram Bot API adapter
-  im/discord/index.ts   # Discord Gateway WebSocket adapter
+  im/mock-chat/         # Mock IM 通道
+  im/feishu/            # 飞书/Lark 集成
+  im/telegram/          # Telegram Bot API
+  im/discord/           # Discord Gateway WebSocket
+  im/dingtalk/          # 钉钉集成
+  im/wechatwork/        # 企业微信集成
 
-types/index.ts          # Strict Zod + TypeScript boundaries
-web/                    # Vite + React 18 SPA with WebSocket real-time chat + HTTP API
-k8s/                    # Kubernetes manifests + HPA
+types/                  # 严格 TypeScript 边界
+  evolution.ts          # Evolution 领域共享类型（减少跨 skill 耦合）
+  index.ts              # 全局类型导出
+
+web/                    # Vite + React 19 SPA + WebSocket 实时聊天 + HTTP API
+  src/                  # 前端源码（TSX, Zustand, TanStack Query）
+  server.ts             # 生产服务器（静态文件 + API 代理）
+  ws-server.ts          # WebSocket 服务器（Redis Pub/Sub 多实例广播）
+
+deploy/                 # Docker / Compose / Helm / K8s
 ```
 
-> **Immutable floor**: `core/rule-engine.ts`. Everything else — including the **Agent Loop itself** — is a **Skill** that can be learned, patched, and replaced.
+> **Immutable floor**: `core/rule-engine.ts`。Everything else — including the **Agent Loop itself** — is a **Skill** that can be learned, patched, and replaced.
 
 ---
 
@@ -181,46 +206,65 @@ k8s/                    # Kubernetes manifests + HPA
 ### 1. Fail-Closed Tools
 Every new tool defaults to `isReadOnly: false` and `isConcurrencySafe: false`. It must explicitly opt-in to broader permissions.
 
-### 2. Permission Pipeline
+### 2. Permission Pipeline v2
 ```
-Rule matching (deny → ask → allow)
+Rule matching (deny → ask → allow), first-match wins
   → Tool-specific checkPermissions()
-  → Mode layer (bypass / auto / interactive)
+  → Mode layer (bypass / auto / interactive / readOnly / plan)
   → Optional human confirmation callback
 ```
+Rules come from 4 sources ordered by precedence: **CLI > Project > Session > Settings**.
 
 ### 3. Skill = File
 Skills are discovered from `skills/<name>/SKILL.md`. They can optionally carry code attachments (`index.ts`) that are dynamically imported at runtime.
 
-### 4. Background Review (Hermes)
+### 4. Evolution DI Registry
+The evolution skill cluster (~10 skills) uses a lightweight service locator (`skills/evolution-core/registry.ts`) to eliminate direct cross-skill imports. Modules register themselves at startup; consumers resolve dependencies via lazy getters. See [ADR-005](docs/adr/005-evolution-skill-cluster.md).
+
+### 5. Production EventBus
+All cross-module communication flows through `core/event-bus.ts`:
+- Async queue with retry, exponential backoff, and dead-letter persistence in SQLite
+- Wraps `HookRegistry` for backward compatibility
+- Guarantees delivery even when handlers fail transiently
+
+### 6. Self-Modification Safety (4 Layers)
+```
+① Constitution Guard  → 硬编码规则拦截（不可变文件、core/ 删除、新增依赖）
+② Syntax Validation   → tsc --noEmit 全项目类型检查
+③ Atomic Write        → tmp → validate → rename
+④ Canary Tests        → 变更后自动跑测试，失败自动 rollback
+```
+See [ADR-003](docs/adr/003-self-modification-safety.md).
+
+### 7. Background Review (Hermes)
 After a conversation ends, a non-blocking review agent analyzes the trajectory and may auto-create or patch skills.
 
-### 5. IM Integration (OpenClaw)
+### 8. IM Integration (OpenClaw)
 All IM adapters implement `ChannelPlugin`:
 - `inbound`: receives messages from the platform
 - `outbound`: sends replies back
 - `meta`: localization, aliases, capabilities
 
-### 6. Self-Healing (OpenClaw)
+### 9. Self-Healing (OpenClaw)
 The agent loop creates a `SystemSnapshot` before every tool execution block. If an anomaly is detected, the `SelfHealer` attempts repair strategies and can fall back to rollback.
 
-### 7. Personality & Dreaming (OpenClaw)
+### 10. Personality & Dreaming (OpenClaw)
 - **PersonalityEvolution**: 10-dimensional traits + 8-dimensional values evolve per session; anchor memories are persisted in SQLite.
-- **DreamingMemory**: A 3-phase consolidation pipeline (light → deep → REM) promotes important memories automatically.
+- **DreamingMemory**: A 3-phase consolidation pipeline (light → deep → promoted) promotes important memories automatically.
 
-### 8. Multimedia Generation
+### 11. Multimedia Generation
 Unified skill for image, video, and music generation via MiniMax (extensible to other providers).
 
-### 9. Task Scheduler
+### 12. Task Scheduler
 Cron, interval, delayed, and one-time tasks with dependency checking, retry backoff, and timeout control.
 
-### 10. i18n
+### 13. i18n
 13 locales supported on both backend (`core/i18n.ts`) and frontend (`web/src/i18n`), with nested-key fallback and `Intl` formatting.
 
-### 11. Pluggable Database Backend
-SQLite (via `better-sqlite3` + WAL) is the default for single-node deployments. Set `USE_POSTGRES=1` and `DATABASE_URL` to switch to PostgreSQL without changing business logic.
+### 14. Pluggable Database Backend
+SQLite (via `better-sqlite3` + WAL) is the default for single-node deployments. Set `USE_POSTGRES=1` and `DATABASE_URL` to switch to PostgreSQL without changing business logic. See [ADR-001](docs/adr/001-sqlite-default-postgres-production.md).
 
-### 12. Horizontal Scaling
+### 15. Horizontal Scaling
 When Redis is available (`REDIS_URL`), WebSocket broadcasts use Redis Pub/Sub so notifications reach clients connected to any instance. PostgreSQL mode enables safe multi-replica deployment.
 
 ---
@@ -230,10 +274,12 @@ When Redis is available (`REDIS_URL`), WebSocket broadcasts use Redis Pub/Sub so
 1. User asks the agent to improve its loop
 2. Agent reads `skills/agent-loop/index.ts` via `read_file`
 3. Agent proposes a patch via `self_modify` with `type: loop_replace`
-4. **Rule Engine** evaluates risk → requires confirmation
-5. Human confirms (or `askConfirmCallback` auto-approves in demo mode)
-6. Patch is applied to disk
-7. Next invocation loads the new Agent Loop
+4. **Constitution Guard** checks immutable rules
+5. **Rule Engine** evaluates risk → requires confirmation
+6. Human confirms (or `askConfirmCallback` auto-approves in demo mode)
+7. Patch is applied atomically (tmp → validate → rename)
+8. **Canary tests** run automatically; failure triggers rollback
+9. Next invocation loads the new Agent Loop
 
 ---
 
@@ -247,9 +293,10 @@ LLM_MODEL=gpt-4o-mini
 LLM_API_KEY=sk-...
 # LLM_BASE_URL=            # optional, for local proxies
 
-# MiniMax specific
-# MINIMAX_API_KEY=...
-# MINIMAX_GROUP_ID=...
+# Optional: auxiliary LLM for review/compression/vision
+# AUXILIARY_REVIEW_PROVIDER=openai
+# AUXILIARY_REVIEW_API_KEY=sk-...
+# AUXILIARY_REVIEW_MODEL=gpt-4o-mini
 
 # Optional: PostgreSQL backend for multi-node deployments
 USE_POSTGRES=1
@@ -257,6 +304,11 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/ouroboros
 
 # Optional: Redis for distributed rate limiting and WS broadcast
 REDIS_URL=redis://localhost:6379/0
+
+# Data retention (used by cleanup script)
+# OUROBOROS_RETENTION_DAYS=30
+# OUROBOROS_MAX_DB_BACKUPS=10
+# OUROBOROS_MAX_CHECKPOINTS=20
 
 # Optional: slow query logging threshold (ms)
 SLOW_QUERY_THRESHOLD_MS=500
@@ -277,7 +329,24 @@ SLOW_QUERY_THRESHOLD_MS=500
 | [docs/contributing.md](./docs/contributing.md) | 开发环境搭建、提交规范、PR 流程、测试要求、安全审核 |
 | [docs/deployment.md](./docs/deployment.md) | Docker / Compose / K8s / 裸机部署指南 |
 | [docs/postgresql-migration.md](./docs/postgresql-migration.md) | SQLite → PostgreSQL 迁移指南 |
-| [docs/adr/001-postgresql-default.md](./docs/adr/001-postgresql-default.md) | 架构决策记录：数据库后端选择 |
+| [docs/adr/001-sqlite-default-postgres-production.md](./docs/adr/001-sqlite-default-postgres-production.md) | ADR：数据库后端选择 |
+| [docs/adr/002-permission-engine-v2.md](./docs/adr/002-permission-engine-v2.md) | ADR：Permission Engine v2 多源规则引擎 |
+| [docs/adr/003-self-modification-safety.md](./docs/adr/003-self-modification-safety.md) | ADR：自修改安全模型（4 层防护） |
+| [docs/adr/004-multi-agent-event-bus.md](./docs/adr/004-multi-agent-event-bus.md) | ADR：多智能体协调 — 统一事件总线 |
+| [docs/adr/005-evolution-skill-cluster.md](./docs/adr/005-evolution-skill-cluster.md) | ADR：Evolution Skill 集群 — 域内紧耦合与 DI 解耦 |
+
+---
+
+## 技术栈
+
+| 层级 | 技术 |
+|---|---|
+| 运行时 | Node.js >= 20, TypeScript 5.7 (strict) |
+| 测试 | Vitest 3.x, Playwright (E2E), `@testing-library/react` |
+| 数据库 | SQLite (`better-sqlite3` + WAL) / PostgreSQL (`pg` + `umzug`) |
+| 缓存/消息 | Redis (`ioredis`), 内存 `SmartCache` |
+| 前端 | React 19, Vite 6, TailwindCSS, Zustand, TanStack Query |
+| 部署 | Docker, Docker Compose, Helm |
 
 ---
 
