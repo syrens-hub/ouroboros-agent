@@ -54,6 +54,7 @@
     "node-fetch": "^2.7.0"
   },
   "optionalDependencies": {
+    "@modelcontextprotocol/sdk": "1.25.3",
     "mem0ai": "^1.0.0"
   },
   "devDependencies": {
