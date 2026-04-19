@@ -16,7 +16,7 @@ import { getDb } from "../../core/db-manager.ts";
 import type { DbAdapter } from "../../core/db-adapter.ts";
 import { evolutionVersionManager } from "../evolution-version-manager/index.ts";
 import { proposeEvolution } from "../evolution-orchestrator/index.ts";
-import type { EvolutionProposal, PipelineResult } from "../evolution-orchestrator/types.ts";
+import type { EvolutionProposal, PipelineResult } from "../../types/evolution.ts";
 import { SelfHealer } from "../self-healing/self-healer.ts";
 import { recordEvolutionMemory, queryEvolutionMemory, deriveLesson } from "../evolution-memory/index.ts";
 import type { KnowledgeBase } from "../knowledge-base/index.ts";

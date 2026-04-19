@@ -1,5 +1,5 @@
 import * as os from "os";
-import { SmartCache, type SmartCacheStats } from "../skills/smart-cache/index.ts";
+import { SmartCache, type SmartCacheStats } from "./smart-cache.ts";
 import { BatchProcessor, type BatchProcessorConfig, type BatchProcessorStats } from "./batch-processor.ts";
 import { ConnectionPool } from "./connection-pool.ts";
 import { safeIgnore } from "./safe-utils.ts";

@@ -15,7 +15,7 @@ import { resolve, relative, sep, normalize } from "path";
 import { readFileSync } from "fs";
 import type { Result } from "../types/index.ts";
 import { ok, err } from "../types/index.ts";
-import { notificationBus } from "../skills/notification/index.ts";
+import { eventBus } from "./event-bus.ts";
 import { logger } from "./logger.ts";
 import { safeJsonParse } from "./safe-utils.ts";
 
@@ -115,7 +115,7 @@ export function evaluateConstitutionGuard(
   if (operation === "delete" && isUnderCore(fullPath)) {
     if (!rel.startsWith("core/sandbox/") && !rel.includes("test")) {
       const message = `Deletion of core file '${rel}' is prohibited by the Constitution (Rule 1).`;
-      notificationBus.emitEvent({
+      eventBus.emitAsync("notification", {
         type: "audit",
         title: "Constitution Guard 拦截",
         message,
@@ -129,7 +129,7 @@ export function evaluateConstitutionGuard(
   // Rule 2: Immutable paths cannot be modified silently
   if (operation !== "delete" && isImmutablePath(fullPath)) {
     const message = `Modification of immutable file '${rel}' is prohibited by the Constitution (Rule 2). Use emergency override only.`;
-    notificationBus.emitEvent({
+    eventBus.emitAsync("notification", {
       type: "audit",
       title: "Constitution Guard 拦截",
       message,
@@ -144,7 +144,7 @@ export function evaluateConstitutionGuard(
     const existing = readFileSync(fullPath, "utf-8");
     if (hasNewNetworkDependency(existing, content)) {
       const message = `Adding new dependencies to package.json is prohibited by the Constitution (Rule 4).`;
-      notificationBus.emitEvent({
+      eventBus.emitAsync("notification", {
         type: "audit",
         title: "Constitution Guard 拦截",
         message,
