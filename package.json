@@ -1,6 +1,6 @@
 {
   "name": "ouroboros-agent",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "A self-modifying agent system: Claude Code skeleton + Hermes blood + OpenClaw nerves",
   "type": "module",
   "workspaces": [
