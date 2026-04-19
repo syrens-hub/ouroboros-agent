@@ -110,17 +110,29 @@ jobs:
       # 最终检查：如果测试步骤实际失败了，标记 job 为失败
       - name: Assert tests passed
         run: |
+          FAIL=0
           if [ -f test-output-node20.log ]; then
-            if grep -qE "(failed|FAIL|Error: Tests crashed)" test-output-node20.log; then
+            if grep -oE '[0-9]+ failed' test-output-node20.log | grep -v '^0 failed'; then
               echo "Tests failed in no-coverage mode"
-              exit 1
+              FAIL=1
+            fi
+            if grep -q 'Tests crashed' test-output-node20.log; then
+              echo "Tests crashed in no-coverage mode"
+              FAIL=1
             fi
           fi
           if [ -f coverage-output-node20.log ]; then
-            if grep -qE "(failed|FAIL|Error: Tests crashed)" coverage-output-node20.log; then
+            if grep -oE '[0-9]+ failed' coverage-output-node20.log | grep -v '^0 failed'; then
               echo "Tests failed in coverage mode"
-              exit 1
+              FAIL=1
             fi
+            if grep -q 'Tests crashed' coverage-output-node20.log; then
+              echo "Tests crashed in coverage mode"
+              FAIL=1
+            fi
+          fi
+          if [ "$FAIL" = "1" ]; then
+            exit 1
           fi
 
   test-node22:
@@ -219,15 +231,27 @@ jobs:
 
       - name: Assert tests passed
         run: |
+          FAIL=0
           if [ -f test-output-node22.log ]; then
-            if grep -qE "(failed|FAIL|Error: Tests crashed)" test-output-node22.log; then
+            if grep -oE '[0-9]+ failed' test-output-node22.log | grep -v '^0 failed'; then
               echo "Tests failed in no-coverage mode"
-              exit 1
+              FAIL=1
+            fi
+            if grep -q 'Tests crashed' test-output-node22.log; then
+              echo "Tests crashed in no-coverage mode"
+              FAIL=1
             fi
           fi
           if [ -f coverage-output-node22.log ]; then
-            if grep -qE "(failed|FAIL|Error: Tests crashed)" coverage-output-node22.log; then
+            if grep -oE '[0-9]+ failed' coverage-output-node22.log | grep -v '^0 failed'; then
               echo "Tests failed in coverage mode"
-              exit 1
+              FAIL=1
             fi
+            if grep -q 'Tests crashed' coverage-output-node22.log; then
+              echo "Tests crashed in coverage mode"
+              FAIL=1
+            fi
+          fi
+          if [ "$FAIL" = "1" ]; then
+            exit 1
           fi
