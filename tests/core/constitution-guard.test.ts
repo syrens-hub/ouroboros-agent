@@ -3,10 +3,10 @@ import { evaluateConstitutionGuard, isConstitutionallyProtected } from "../../co
 import { writeFileSync, readFileSync } from "fs";
 import { join } from "path";
 
-const mockEmitEvent = vi.fn();
-vi.mock("../../skills/notification/index.ts", () => ({
-  notificationBus: {
-    emitEvent: (...args: unknown[]) => mockEmitEvent(...args),
+const mockEmitAsync = vi.fn();
+vi.mock("../../core/event-bus.ts", () => ({
+  eventBus: {
+    emitAsync: (...args: unknown[]) => mockEmitAsync(...args),
   },
 }));
 
@@ -18,7 +18,7 @@ describe("constitution-guard", () => {
 
   beforeEach(() => {
     originalPkgJson = readFileSync(pkgJsonPath, "utf-8");
-    mockEmitEvent.mockClear();
+    mockEmitAsync.mockClear();
   });
 
   afterEach(() => {
@@ -32,8 +32,9 @@ describe("constitution-guard", () => {
       expect(result.error.code).toBe("CONSTITUTION_VIOLATION");
       expect(result.error.message).toContain("immutable file");
     }
-    expect(mockEmitEvent).toHaveBeenCalledTimes(1);
-    expect(mockEmitEvent.mock.calls[0][0].meta.rule).toBe("Rule 2");
+    expect(mockEmitAsync).toHaveBeenCalledTimes(1);
+    expect(mockEmitAsync.mock.calls[0][0]).toBe("notification");
+    expect(mockEmitAsync.mock.calls[0][1].meta.rule).toBe("Rule 2");
   });
 
   it("denies modification of core/config.ts", () => {
@@ -51,8 +52,9 @@ describe("constitution-guard", () => {
       expect(result.error.code).toBe("CONSTITUTION_VIOLATION");
       expect(result.error.message).toContain("Deletion of core file");
     }
-    expect(mockEmitEvent).toHaveBeenCalledTimes(1);
-    expect(mockEmitEvent.mock.calls[0][0].meta.rule).toBe("Rule 1");
+    expect(mockEmitAsync).toHaveBeenCalledTimes(1);
+    expect(mockEmitAsync.mock.calls[0][0]).toBe("notification");
+    expect(mockEmitAsync.mock.calls[0][1].meta.rule).toBe("Rule 1");
   });
 
   it("denies adding new dependencies to package.json", () => {
@@ -66,8 +68,9 @@ describe("constitution-guard", () => {
       expect(result.error.code).toBe("CONSTITUTION_VIOLATION");
       expect(result.error.message).toContain("package.json");
     }
-    expect(mockEmitEvent).toHaveBeenCalledTimes(1);
-    expect(mockEmitEvent.mock.calls[0][0].meta.rule).toBe("Rule 4");
+    expect(mockEmitAsync).toHaveBeenCalledTimes(1);
+    expect(mockEmitAsync.mock.calls[0][0]).toBe("notification");
+    expect(mockEmitAsync.mock.calls[0][1].meta.rule).toBe("Rule 4");
   });
 
   it("allows modification of skills/greet-tool/index.ts", () => {
@@ -94,8 +97,9 @@ describe("constitution-guard", () => {
       expect(result.error.code).toBe("CONSTITUTION_VIOLATION");
       expect(result.error.message).toContain("package.json");
     }
-    expect(mockEmitEvent).toHaveBeenCalledTimes(1);
-    expect(mockEmitEvent.mock.calls[0][0].meta.rule).toBe("Rule 4");
+    expect(mockEmitAsync).toHaveBeenCalledTimes(1);
+    expect(mockEmitAsync.mock.calls[0][0]).toBe("notification");
+    expect(mockEmitAsync.mock.calls[0][1].meta.rule).toBe("Rule 4");
   });
 
   it("allows deletion of core files inside sandbox or test dirs", () => {

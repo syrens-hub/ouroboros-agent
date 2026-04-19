@@ -764,4 +764,39 @@ const m016: { name: string; up: MigrationFn<Ctx> } = {
   },
 };
 
-export const migrations = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016];
+const m017: { name: string; up: MigrationFn<Ctx> } = {
+  name: "017_security_audit_log",
+  async up({ context }) {
+    const sqlite = `
+      CREATE TABLE IF NOT EXISTS security_audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        input_json TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        reason TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_security_audit_session ON security_audit_log(session_id);
+      CREATE INDEX IF NOT EXISTS idx_security_audit_timestamp ON security_audit_log(timestamp DESC);
+    `;
+
+    const pg = `
+      CREATE TABLE IF NOT EXISTS security_audit_log (
+        id SERIAL PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        input_json TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        timestamp BIGINT NOT NULL,
+        reason TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_security_audit_session ON security_audit_log(session_id);
+      CREATE INDEX IF NOT EXISTS idx_security_audit_timestamp ON security_audit_log(timestamp DESC);
+    `;
+
+    await context.db.exec(context.isPostgres ? pg : sqlite);
+  },
+};
+
+export const migrations = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017];
