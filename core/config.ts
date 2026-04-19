@@ -4,6 +4,15 @@
  * Single source of truth for all environment-driven settings.
  */
 
+import { databaseConfig, redisConfig } from "./config-extension.ts";
+import { join } from "path";
+
+// Mutable shared state for backward-compatible db alias getters/setters
+const _dbState = {
+  backend: databaseConfig.backend,
+  connectionString: databaseConfig.connectionString || "",
+};
+
 export const appConfig = {
   llm: {
     provider: (process.env.LLM_PROVIDER as "openai" | "anthropic" | "local" | "minimax" | "qwen" | "gemini") || "local",
@@ -21,10 +30,42 @@ export const appConfig = {
     temperature: process.env.FALLBACK_LLM_TEMPERATURE ? parseFloat(process.env.FALLBACK_LLM_TEMPERATURE) : undefined,
     maxTokens: process.env.FALLBACK_LLM_MAX_TOKENS ? parseInt(process.env.FALLBACK_LLM_MAX_TOKENS, 10) : undefined,
   },
+  database: {
+    get backend(): "sqlite" | "postgres" {
+      return _dbState.backend;
+    },
+    set backend(v: "sqlite" | "postgres") {
+      _dbState.backend = v;
+    },
+    get connectionString(): string {
+      return _dbState.connectionString;
+    },
+    set connectionString(v: string) {
+      _dbState.connectionString = v;
+    },
+    poolSize: databaseConfig.poolSize,
+    ssl: databaseConfig.ssl,
+    get sqlite() {
+      return {
+        path: process.env.DATABASE_PATH || join(process.env.OUROBOROS_DB_DIR || ".ouroboros", "session.db"),
+        wal: process.env.SQLITE_WAL !== "false",
+      };
+    },
+  },
   db: {
     dir: process.env.OUROBOROS_DB_DIR || ".ouroboros",
-    usePostgres: process.env.USE_POSTGRES === "1" || process.env.USE_POSTGRES === "true",
-    postgresUrl: process.env.DATABASE_URL || "",
+    get usePostgres() {
+      return _dbState.backend === "postgres";
+    },
+    set usePostgres(v: boolean) {
+      _dbState.backend = v ? "postgres" : "sqlite";
+    },
+    get postgresUrl() {
+      return _dbState.connectionString;
+    },
+    set postgresUrl(v: string) {
+      _dbState.connectionString = v;
+    },
     slowQueryThresholdMs: process.env.SLOW_QUERY_THRESHOLD_MS ? parseInt(process.env.SLOW_QUERY_THRESHOLD_MS, 10) : 0,
   },
   skills: {
@@ -52,7 +93,8 @@ export const appConfig = {
     format: (process.env.LOG_FORMAT as "json" | "pretty") || "pretty",
   },
   redis: {
-    url: process.env.REDIS_URL || "",
+    url: redisConfig.url || "",
+    lockTtlMs: redisConfig.lockTtlMs,
   },
   sentry: {
     dsn: process.env.SENTRY_DSN || "",
@@ -116,6 +158,61 @@ export const appConfig = {
     serviceVersion: process.env.OTEL_SERVICE_VERSION || "0.1.0",
     timeoutMs: process.env.OTEL_EXPORTER_OTLP_TIMEOUT ? parseInt(process.env.OTEL_EXPORTER_OTLP_TIMEOUT, 10) : 10_000,
   },
+  cleanup: {
+    maxDbBackups: parseInt(process.env.OUROBOROS_MAX_DB_BACKUPS || "10", 10),
+    maxEvolutionBackups: parseInt(process.env.OUROBOROS_MAX_EVOLUTION_BACKUPS || "50", 10),
+    maxCheckpoints: parseInt(process.env.OUROBOROS_MAX_CHECKPOINTS || "30", 10),
+    retentionDays: parseInt(process.env.OUROBOROS_RETENTION_DAYS || "30", 10),
+  },
 };
 
 export type AppConfig = typeof appConfig;
+
+export function validateConfig(
+  config: AppConfig = appConfig,
+  nodeEnv: string = process.env.NODE_ENV || "development",
+): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  // 1. LLM config (when provider is not local)
+  if (config.llm.provider !== "local") {
+    if (!config.llm.apiKey || config.llm.apiKey.trim() === "") {
+      errors.push("LLM_API_KEY is required and must not be empty when LLM_PROVIDER is not 'local'");
+    }
+    if (!config.llm.model || config.llm.model.trim() === "") {
+      errors.push("LLM_MODEL is required and must not be empty when LLM_PROVIDER is not 'local'");
+    }
+  }
+
+  // 2. Web config (production only)
+  if (nodeEnv === "production") {
+    if (!config.web.apiToken || config.web.apiToken.length < 16) {
+      errors.push("WEB_API_TOKEN is required in production and must be at least 16 characters long");
+    }
+  }
+
+  // 3. PostgreSQL config
+  if (config.database.backend === "postgres" || config.db.usePostgres) {
+    const pgUrl = config.database.connectionString || config.db.postgresUrl;
+    if (!pgUrl) {
+      errors.push("DATABASE_URL is required when PostgreSQL backend is enabled");
+    } else if (
+      !pgUrl.startsWith("postgres://") &&
+      !pgUrl.startsWith("postgresql://")
+    ) {
+      errors.push("DATABASE_URL must start with 'postgres://' or 'postgresql://'");
+    }
+  }
+
+  // 4. Feishu config (when auto-start is enabled)
+  if (config.feishu.autoStart) {
+    if (!config.feishu.appId || config.feishu.appId.trim() === "") {
+      errors.push("FEISHU_APP_ID is required and must not be empty when FEISHU_AUTO_START is enabled");
+    }
+    if (!config.feishu.appSecret || config.feishu.appSecret.trim() === "") {
+      errors.push("FEISHU_APP_SECRET is required and must not be empty when FEISHU_AUTO_START is enabled");
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}

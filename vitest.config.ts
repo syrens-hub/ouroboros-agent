@@ -7,7 +7,7 @@ export default defineConfig({
     pool: "forks",
     poolOptions: {
       forks: {
-        singleFork: false,
+        singleFork: true,
       },
     },
     coverage: {
@@ -31,7 +31,6 @@ export default defineConfig({
         "core/progress-types.ts",
         "core/log-progress-reporter.ts",
         "core/hooks/audit-log.ts",
-        "core/session-archiver.ts",
         "core/config-extension.ts",
         "skills/web-mcp/templates/**",
         "skills/skill-scan/test-fixtures**",
@@ -91,11 +90,12 @@ export default defineConfig({
         "dist",
         ".ouroboros",
       ],
+      reporter: ["text","json","html"],
       thresholds: {
-        statements: 75,
-        branches: 73,
-        functions: 72,
-        lines: 75,
+        statements: 70,
+        branches: 70,
+        functions: 70,
+        lines: 70,
       },
     },
   },

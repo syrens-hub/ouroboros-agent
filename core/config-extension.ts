@@ -92,7 +92,12 @@ export const securityConfig: SecurityConfig = {
   },
   auditLogging: {
     enabled: process.env.OUROBOROS_AUDIT_LOGGING !== "false",
-    retentionDays: parseInt(process.env.OUROBOROS_AUDIT_RETENTION_DAYS || "90", 10),
+    retentionDays: parseInt(
+      process.env.OUROBOROS_LOG_RETENTION_DAYS 
+        || process.env.OUROBOROS_AUDIT_RETENTION_DAYS 
+        || "30", 
+      10
+    ),
     failedAttemptsOnly: process.env.OUROBOROS_AUDIT_FAILED_ONLY === "true",
     includeToolInput: process.env.OUROBOROS_AUDIT_INCLUDE_INPUT !== "true", // Default false for security
   },
@@ -215,8 +220,102 @@ export const backupConfig: BackupConfig = {
 };
 
 // =============================================================================
+// Database Configuration
+// =============================================================================
+
+export interface DatabaseConfig {
+  /** Database backend: sqlite (default) or postgres */
+  backend: "sqlite" | "postgres";
+  /** PostgreSQL connection string (DATABASE_URL) */
+  connectionString?: string;
+  /** PostgreSQL connection pool size (default 10) */
+  poolSize: number;
+  /** Enable PostgreSQL SSL (default false) */
+  ssl: boolean;
+  /** SQLite-specific settings */
+  sqlite: {
+    /** Database file path (default: <OUROBOROS_DB_DIR>/session.db) */
+    path: string;
+    /** Enable SQLite WAL mode (default true) */
+    wal: boolean;
+  };
+}
+
+export const databaseConfig: DatabaseConfig = {
+  backend:
+    (process.env.DATABASE_BACKEND as "sqlite" | "postgres") ||
+    (process.env.USE_POSTGRES === "1" || process.env.USE_POSTGRES === "true"
+      ? "postgres"
+      : "sqlite"),
+  connectionString: process.env.DATABASE_URL || "",
+  poolSize: parseInt(process.env.POSTGRES_POOL_SIZE || "10", 10),
+  ssl: process.env.POSTGRES_SSL === "1" || process.env.POSTGRES_SSL === "true",
+  sqlite: {
+    path: process.env.DATABASE_PATH || "./data/ouroboros.db",
+    wal: process.env.SQLITE_WAL !== "false",
+  },
+};
+
+// =============================================================================
 // Combined Extended Config
 // =============================================================================
+
+// =============================================================================
+// Semantic Cache Configuration
+// =============================================================================
+
+export interface SemanticCacheConfig {
+  enabled: boolean;
+  threshold: number;
+  ttlMs: number;
+  maxEntries: number;
+  defaultModel: string;
+}
+
+export const semanticCacheConfig: SemanticCacheConfig = {
+  enabled: process.env.SEMANTIC_CACHE_ENABLED === "true",
+  threshold: parseFloat(process.env.SEMANTIC_CACHE_THRESHOLD || "0.95"),
+  ttlMs: parseInt(process.env.SEMANTIC_CACHE_TTL_MS || String(7 * 24 * 60 * 60 * 1000), 10),
+  maxEntries: parseInt(process.env.SEMANTIC_CACHE_MAX_ENTRIES || "10000", 10),
+  defaultModel: process.env.SEMANTIC_CACHE_DEFAULT_MODEL || "default",
+};
+
+// =============================================================================
+// Combined Extended Config
+// =============================================================================
+
+// =============================================================================
+// A/B Testing Configuration
+// =============================================================================
+
+export interface ABTestingConfig {
+  enabled: boolean;
+  defaultTrafficSplit: number;
+  autoRollbackThreshold: number;
+}
+
+export const abTestingConfig: ABTestingConfig = {
+  enabled: process.env.AB_TEST_ENABLED === "true",
+  defaultTrafficSplit: parseFloat(process.env.AB_TEST_DEFAULT_SPLIT || "0.05"),
+  autoRollbackThreshold: parseFloat(process.env.AB_TEST_AUTO_ROLLBACK_THRESHOLD || "0.1"),
+};
+
+export interface RedisConfig {
+  url?: string;
+  sentinel?: { master: string; nodes: string[] };
+  lockTtlMs: number;
+}
+
+export const redisConfig: RedisConfig = {
+  url: process.env.REDIS_URL || undefined,
+  sentinel: process.env.REDIS_SENTINEL_MASTER
+    ? {
+        master: process.env.REDIS_SENTINEL_MASTER,
+        nodes: (process.env.REDIS_SENTINEL_NODES || "").split(",").map((s) => s.trim()).filter(Boolean),
+      }
+    : undefined,
+  lockTtlMs: parseInt(process.env.REDIS_LOCK_TTL_MS || "60000", 10),
+};
 
 export interface ExtendedConfig {
   tools: ToolExecutionConfig;
@@ -224,6 +323,10 @@ export interface ExtendedConfig {
   selfHealing: SelfHealingConfig;
   skillVersioning: SkillVersioningConfig;
   backup: BackupConfig;
+  database: DatabaseConfig;
+  semanticCache: SemanticCacheConfig;
+  abTesting: ABTestingConfig;
+  redis: RedisConfig;
 }
 
 export const extendedConfig: ExtendedConfig = {
@@ -232,6 +335,10 @@ export const extendedConfig: ExtendedConfig = {
   selfHealing: selfHealingConfig,
   skillVersioning: skillVersioningConfig,
   backup: backupConfig,
+  database: databaseConfig,
+  semanticCache: semanticCacheConfig,
+  abTesting: abTestingConfig,
+  redis: redisConfig,
 };
 
 // =============================================================================
@@ -256,7 +363,8 @@ export const extendedConfig: ExtendedConfig = {
  *   OUROBOROS_PATH_DENY_PATTERNS=...        - Comma-separated denied path patterns
  *   OUROBOROS_PATH_VALIDATION=false         - Enable path validation
  *   OUROBOROS_AUDIT_LOGGING=false           - Enable audit logging
- *   OUROBOROS_AUDIT_RETENTION_DAYS=90       - Audit log retention
+ *   OUROBOROS_LOG_RETENTION_DAYS=30         - Global audit/dead-letter log retention
+ *   OUROBOROS_AUDIT_RETENTION_DAYS=90       - Audit log retention (legacy fallback)
  *   OUROBOROS_AUDIT_INCLUDE_INPUT=true      - Include tool input in logs
  * 
  * SELF-HEALING:
@@ -276,4 +384,20 @@ export const extendedConfig: ExtendedConfig = {
  *   OUROBOROS_BACKUP_ENABLED=false          - Enable backups
  *   OUROBOROS_MAX_BACKUPS=10               - Max backups to retain
  *   OUROBOROS_BACKUP_DIR=...               - Backup directory
+ *
+ * DATABASE:
+ *   DATABASE_BACKEND=sqlite                - Database backend: sqlite | postgres
+ *   USE_POSTGRES=1                         - Legacy flag to enable PostgreSQL
+ *   DATABASE_URL=...                       - PostgreSQL connection string
+ *   POSTGRES_POOL_SIZE=10                  - PostgreSQL connection pool size
+ *   POSTGRES_SSL=false                     - Enable PostgreSQL SSL
+ *   DATABASE_PATH=./data/ouroboros.db      - SQLite database file path
+ *   SQLITE_WAL=true                        - Enable SQLite WAL mode
+ *   SLOW_QUERY_THRESHOLD_MS=0              - Slow query threshold (0 = disabled)
+ *
+ * REDIS:
+ *   REDIS_URL=redis://localhost:6379/0     - Redis connection URL
+ *   REDIS_SENTINEL_MASTER=mymaster         - Sentinel master name
+ *   REDIS_SENTINEL_NODES=host1:26379,host2:26379 - Sentinel nodes
+ *   REDIS_LOCK_TTL_MS=60000                - Default distributed lock TTL
  */

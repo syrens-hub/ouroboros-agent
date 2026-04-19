@@ -10,7 +10,7 @@ import type { DbAdapter } from "./db-adapter.ts";
 import { hookRegistry, type HookEventType, type HookContext } from "./hook-system.ts";
 export type { HookEventType, HookContext };
 import { logger } from "./logger.ts";
-import { safeJsonParse } from "./safe-utils.ts";
+import { safeJsonParse, safeFailOpen } from "./safe-utils.ts";
 
 export type BackoffStrategy = "exponential" | "linear" | "fixed";
 
@@ -142,9 +142,29 @@ export class ProductionEventBus {
     this.emitAsync(eventType, context);
   }
 
+  /** Register a handler for an event type (pass-through to HookRegistry). */
+  register(eventType: HookEventType, handler: (eventType: HookEventType, context: HookContext) => Promise<void> | void): void {
+    hookRegistry.register(eventType, handler);
+  }
+
+  /** Unregister a handler for an event type. */
+  unregister(eventType: HookEventType, handler: (eventType: HookEventType, context: HookContext) => Promise<void> | void): void {
+    hookRegistry.unregister(eventType, handler);
+  }
+
   /** Fire event immediately without queueing (pass-through to HookRegistry). */
   async emitImmediate(eventType: HookEventType, context: HookContext): Promise<void> {
     await hookRegistry.emit(eventType, context);
+  }
+
+  /** Load built-in hooks. */
+  registerBuiltins(): void {
+    hookRegistry.registerBuiltins();
+  }
+
+  /** Discover and load custom hooks from disk. */
+  discoverHooks(customDir?: string): void {
+    hookRegistry.discoverAndLoad(customDir);
   }
 
   private async _processLoop(): Promise<void> {
@@ -290,6 +310,24 @@ export class ProductionEventBus {
   shutdown(): void {
     this.processing = false;
   }
+}
+
+/**
+ * Prune dead-letter entries older than the given threshold.
+ * Returns the number of deleted rows.
+ */
+export function pruneDeadLetters(olderThanMs: number): number {
+  return safeFailOpen(() => {
+    ensureInitialized();
+    const db = getDb();
+    const cutoff = Date.now() - olderThanMs;
+    const result = db.prepare("DELETE FROM dead_letters WHERE last_attempt_at < ?").run(cutoff);
+    const deleted = (result as { changes: number }).changes ?? 0;
+    if (deleted > 0) {
+      logger.info("Pruned old dead letters", { deleted, cutoff });
+    }
+    return deleted;
+  }, "pruneDeadLetters", 0);
 }
 
 /** Singleton instance for app-wide use. */

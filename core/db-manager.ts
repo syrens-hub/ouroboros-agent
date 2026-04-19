@@ -6,15 +6,31 @@
 
 import Database from "better-sqlite3";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync } from "fs";
-import { join } from "path";
+import { join, dirname, basename } from "path";
 import { appConfig } from "./config.ts";
 import { logger } from "./logger.ts";
 import { safeFailOpen, safeFailOpenAsync, safeIgnore } from "./safe-utils.ts";
 import type { DbAdapter } from "./db-adapter.ts";
 import { PgDbAdapter, isPgAvailable } from "./db-pg.ts";
+import { recordDbQuery, recordDbTransaction } from "./db-metrics.ts";
 
 function getDbDir(): string {
-  const baseDir = appConfig.db.dir.startsWith("/") ? appConfig.db.dir : join(process.cwd(), appConfig.db.dir);
+  let baseDir: string;
+  if (appConfig.database.backend === "sqlite") {
+    // In tests, respect appConfig.db.dir override for SQLite path calculation.
+    // Many tests set appConfig.db.dir to a temp directory but forget to update
+    // appConfig.database.sqlite.path (which is derived from env vars).
+    if (process.env.VITEST && appConfig.db.dir !== ".ouroboros") {
+      baseDir = appConfig.db.dir.startsWith("/") ? appConfig.db.dir : join(process.cwd(), appConfig.db.dir);
+    } else {
+      const configuredPath = appConfig.database.sqlite.path;
+      baseDir = configuredPath.startsWith("/")
+        ? dirname(configuredPath)
+        : join(process.cwd(), dirname(configuredPath));
+    }
+  } else {
+    baseDir = appConfig.db.dir.startsWith("/") ? appConfig.db.dir : join(process.cwd(), appConfig.db.dir);
+  }
   // Auto-isolate SQLite databases per Vitest worker to prevent lock conflicts
   // during parallel test execution. Only applies when using the default path.
   if (process.env.VITEST && appConfig.db.dir === ".ouroboros") {
@@ -26,11 +42,72 @@ function getDbDir(): string {
 }
 
 function getDbPath(): string {
+  if (appConfig.database.backend === "sqlite") {
+    return join(getDbDir(), basename(appConfig.database.sqlite.path));
+  }
   return join(getDbDir(), "session.db");
 }
 
 function getLockFilePath(): string {
   return join(getDbDir(), "session.lock");
+}
+
+function wrapSqliteMetrics(adapter: DbAdapter): DbAdapter {
+  const origExec = adapter.exec.bind(adapter);
+  adapter.exec = (sql: string) => {
+    const start = performance.now();
+    try {
+      return origExec(sql);
+    } finally {
+      recordDbQuery((performance.now() - start) / 1000, "sqlite");
+    }
+  };
+
+  const origPragma = adapter.pragma.bind(adapter);
+  adapter.pragma = <T = unknown>(pragma: string): T | Promise<T> => {
+    const start = performance.now();
+    try {
+      return origPragma(pragma) as T | Promise<T>;
+    } finally {
+      recordDbQuery((performance.now() - start) / 1000, "sqlite");
+    }
+  };
+
+  const origPrepare = adapter.prepare.bind(adapter);
+  adapter.prepare = (sql: string) => {
+    const stmt = origPrepare(sql);
+    const wrap = <F extends (...args: unknown[]) => unknown>(fn: F): F => {
+      return ((...args: unknown[]) => {
+        const start = performance.now();
+        try {
+          return fn(...args);
+        } finally {
+          recordDbQuery((performance.now() - start) / 1000, "sqlite");
+        }
+      }) as F;
+    };
+    return {
+      run: wrap(stmt.run.bind(stmt)),
+      get: wrap(stmt.get.bind(stmt)),
+      all: wrap(stmt.all.bind(stmt)),
+    };
+  };
+
+  const origTransaction = adapter.transaction.bind(adapter);
+  adapter.transaction = <T>(fn: () => T | Promise<T>): (() => T | Promise<T>) => {
+    const tx = origTransaction(fn);
+    return () => {
+      const start = performance.now();
+      try {
+        return tx();
+      } finally {
+        recordDbQuery((performance.now() - start) / 1000, "sqlite");
+        recordDbTransaction("sqlite");
+      }
+    };
+  };
+
+  return adapter;
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -84,6 +161,7 @@ export function resetDbSingleton(): void {
     dbInstance = null;
   }
   dbInitPromise = null;
+  dbInitInProgress = false;
   safeIgnore(() => {
     const lockPath = getLockFilePath();
     if (existsSync(lockPath)) {
@@ -110,15 +188,16 @@ export function getDb(): DbAdapter {
           "Use getDbAsync() instead so callers properly await the init promise."
       );
     }
-    if (appConfig.db.usePostgres) {
-      if (!appConfig.db.postgresUrl) {
+    if (appConfig.database.backend === "postgres") {
+      const pgUrl = appConfig.database.connectionString || appConfig.db.postgresUrl;
+      if (!pgUrl) {
         throw new Error("USE_POSTGRES is enabled but DATABASE_URL is not set.");
       }
       if (!isPgAvailable()) {
         throw new Error("PostgreSQL driver is not installed. Run: npm install pg");
       }
       dbInitInProgress = true;
-      dbInstance = new PgDbAdapter(appConfig.db.postgresUrl);
+      dbInstance = new PgDbAdapter(pgUrl, { poolSize: appConfig.database.poolSize });
       dbInitPromise = initSchema(dbInstance)
         .catch((e) => {
           logger.error("PostgreSQL migration failed", { error: String(e) });
@@ -127,14 +206,17 @@ export function getDb(): DbAdapter {
         .finally(() => {
           dbInitInProgress = false;
         });
-      logger.info("Using PostgreSQL backend");
+      logger.info("Using PostgreSQL backend", { poolSize: appConfig.database.poolSize });
     } else {
       const dir = getDbDir();
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
       acquireDbLock();
-      const db = new Database(getDbPath()) as unknown as DbAdapter;
+      const dbPath = getDbPath();
+      const db = new Database(dbPath) as unknown as DbAdapter;
       try {
-        db.pragma("journal_mode = WAL");
+        if (appConfig.database.sqlite.wal) {
+          db.pragma("journal_mode = WAL");
+        }
         db.pragma("synchronous = NORMAL");
         db.pragma("cache_size = -64000");
         db.pragma("foreign_keys = ON");
@@ -145,7 +227,8 @@ export function getDb(): DbAdapter {
           logger.error("Database integrity check failed", { result: integrityResult });
           throw new Error(`Database integrity check failed: ${integrityResult}`);
         }
-        dbInstance = db;
+        dbInstance = wrapSqliteMetrics(db);
+        logger.info("Using SQLite backend", { path: dbPath, wal: appConfig.database.sqlite.wal });
       } catch (e) {
         safeIgnore(() => db.close(), "db cleanup close after init error");
         throw e;
@@ -268,7 +351,7 @@ function runMigrationsSync(db: DbAdapter): void {
 }
 
 export async function initSchema(db: DbAdapter) {
-  const isPostgres = appConfig.db.usePostgres;
+  const isPostgres = appConfig.database.backend === "postgres";
   const hasLegacy = await hasLegacyMigrationsTable(db, isPostgres);
   const hasUmzug = await hasUmzugMigrationsTable(db, isPostgres);
   if (hasLegacy && !hasUmzug) {
@@ -291,7 +374,7 @@ export async function initSchema(db: DbAdapter) {
 }
 
 export async function explainQueryPlan(db: DbAdapter, sql: string, params: unknown[]): Promise<unknown[]> {
-  if (appConfig.db.usePostgres) {
+  if (appConfig.database.backend === "postgres") {
     return (await db.prepare(`EXPLAIN ${sql}`).all(...params)) as unknown[];
   }
   return (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params)) as unknown[];

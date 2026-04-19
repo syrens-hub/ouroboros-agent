@@ -4,18 +4,33 @@
  * Automated SQLite backups with WAL checkpointing.
  */
 
-import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, statSync, unlinkSync } from "fs";
-import { join, basename } from "path";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, statSync, unlinkSync, rmSync } from "fs";
+import { join, basename, dirname } from "path";
 import { appConfig } from "../../core/config.ts";
 import { getDb, resetDbSingleton } from "../../core/session-db.ts";
 import { logger } from "../../core/logger.ts";
 import { safeIgnore } from "../../core/safe-utils.ts";
 
 function getDbDir(): string {
+  // Mirror db-manager.ts path resolution exactly
+  if (appConfig.database.backend === "sqlite") {
+    const configuredPath = appConfig.database.sqlite.path;
+    const baseDir = configuredPath.startsWith("/")
+      ? dirname(configuredPath)
+      : join(process.cwd(), dirname(configuredPath));
+    // Auto-isolate SQLite databases per Vitest worker
+    if (process.env.VITEST && appConfig.db.dir === ".ouroboros") {
+      return join(baseDir, `vitest-${process.env.VITEST_POOL_ID || process.pid}`);
+    }
+    return baseDir;
+  }
   return appConfig.db.dir.startsWith("/") ? appConfig.db.dir : join(process.cwd(), appConfig.db.dir);
 }
 
 function getDbPath(): string {
+  if (appConfig.database.backend === "sqlite") {
+    return join(getDbDir(), basename(appConfig.database.sqlite.path));
+  }
   return join(getDbDir(), "session.db");
 }
 
@@ -23,7 +38,7 @@ function getBackupDir(): string {
   return join(getDbDir(), "backups");
 }
 
-const MAX_BACKUPS = 10;
+const MAX_DB_BACKUPS = appConfig.cleanup.maxDbBackups;
 
 function ensureBackupDir() {
   const dir = getBackupDir();
@@ -81,14 +96,72 @@ export async function createBackup(): Promise<{ success: boolean; filename?: str
 
 function pruneOldBackups() {
   const files = listBackups();
-  if (files.length > MAX_BACKUPS) {
-    for (const f of files.slice(MAX_BACKUPS)) {
+  if (files.length > MAX_DB_BACKUPS) {
+    for (const f of files.slice(MAX_DB_BACKUPS)) {
       safeIgnore(() => {
         unlinkSync(join(getBackupDir(), f.filename));
-        logger.info("Pruned old backup", { filename: f.filename });
+        logger.info("Pruned old DB backup", { filename: f.filename });
       }, "pruneOldBackups");
     }
   }
+}
+
+function getEvolutionBackupDir(): string {
+  return join(getDbDir(), "backups");
+}
+
+/** Prune evolution backups (evo-* directories) by count and age. */
+export function pruneEvolutionBackups(): { pruned: number; errors: string[] } {
+  const dir = getEvolutionBackupDir();
+  const maxCount = appConfig.cleanup.maxEvolutionBackups;
+  const retentionMs = appConfig.cleanup.retentionDays * 24 * 60 * 60 * 1000;
+  const cutoff = Date.now() - retentionMs;
+  const errors: string[] = [];
+  let pruned = 0;
+
+  if (!existsSync(dir)) return { pruned, errors };
+
+  const entries = readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name.startsWith("evo-"))
+    .map((e) => {
+      const st = statSync(join(dir, e.name));
+      return { name: e.name, mtime: st.mtime.getTime() };
+    })
+    .sort((a, b) => b.mtime - a.mtime);
+
+  // Age-based pruning
+  for (const entry of entries) {
+    if (entry.mtime < cutoff) {
+      safeIgnore(() => {
+        const entryPath = join(dir, entry.name);
+        // Recursively remove directory
+        rmSync(entryPath, { recursive: true, force: true });
+        pruned++;
+        logger.info("Pruned old evolution backup", { name: entry.name, ageDays: Math.round((Date.now() - entry.mtime) / 86400000) });
+      }, `pruneEvolutionBackups:${entry.name}`);
+    }
+  }
+
+  // Count-based pruning (after age pruning, if still over limit)
+  const remaining = readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name.startsWith("evo-"))
+    .map((e) => {
+      const st = statSync(join(dir, e.name));
+      return { name: e.name, mtime: st.mtime.getTime() };
+    })
+    .sort((a, b) => b.mtime - a.mtime);
+
+  if (remaining.length > maxCount) {
+    for (const entry of remaining.slice(maxCount)) {
+      safeIgnore(() => {
+        rmSync(join(dir, entry.name), { recursive: true, force: true });
+        pruned++;
+        logger.info("Pruned excess evolution backup", { name: entry.name });
+      }, `pruneEvolutionBackups:${entry.name}`);
+    }
+  }
+
+  return { pruned, errors };
 }
 
 export function restoreBackup(filename: string): { success: boolean; error?: string } {

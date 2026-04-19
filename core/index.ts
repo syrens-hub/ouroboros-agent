@@ -24,15 +24,28 @@ export {
 export type { PermissionPipelineInput } from "./permission-gate.ts";
 
 export {
-  createSandboxContext,
-  createSandboxToolCallContext,
   createChildAbortController,
   generateTaskId,
-} from "../skills/sandbox/index.ts";
-export type { SandboxContext } from "../skills/sandbox/index.ts";
+} from "./sandbox.ts";
+
+export type { SandboxContext } from "../types/sandbox.ts";
 
 export { streamLLM, callLLM } from "./llm-router.ts";
 export type { LLMConfig, LLMStreamChunk, LLMProvider } from "./llm-router.ts";
+
+export { cachedLlmCall, getSemanticCache, resetSemanticCache } from "./llm-cache-wrapper.ts";
+export type { CachedLlmCallOpts } from "./llm-cache-wrapper.ts";
+
+export {
+  InMemorySemanticCache,
+  DbSemanticCache,
+  cosineSimilarity,
+} from "./semantic-cache.ts";
+export type {
+  SemanticCache,
+  SemanticCacheEntry,
+  CacheResult,
+} from "./semantic-cache.ts";
 
 export {
   createSession,
@@ -48,3 +61,10 @@ export {
   logModification,
   splitSession,
 } from "./session-db.ts";
+
+export {
+  createDbABTestFramework,
+  DbABTestFramework,
+  djb2Hash,
+} from "./ab-test.ts";
+export type { ABTest, ABTestFramework, ABTestMetrics } from "./ab-test.ts";

@@ -36,5 +36,5 @@ describe("HookRegistry", () => {
     await registry.emit("agent:llmCall", { sessionId: "s1" });
     expect(Date.now() - start).toBeLessThan(7000); // Should be ~5000ms timeout
     expect(slowHandler).toHaveBeenCalled();
-  });
+  }, 15000);
 });

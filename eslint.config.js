@@ -6,8 +6,19 @@ import reactHooks from "eslint-plugin-react-hooks";
 export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
+  // Root/backend TypeScript
   {
-    files: ["**/*.ts", "**/*.tsx"],
+    files: [
+      "*.ts",
+      "benchmarks/**/*.ts",
+      "core/**/*.ts",
+      "skills/**/*.ts",
+      "types/**/*.ts",
+      "tests/**/*.ts",
+      "extensions/**/*.ts",
+      "scripts/**/*.ts",
+      "tools/**/*.ts",
+    ],
     languageOptions: {
       parserOptions: {
         project: true,
@@ -16,10 +27,32 @@ export default tseslint.config(
     },
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
       "@typescript-eslint/prefer-nullish-coalescing": "off",
     },
   },
+  // Web TypeScript / TSX
+  {
+    files: ["web/**/*.ts", "web/**/*.tsx"],
+    languageOptions: {
+      parserOptions: {
+        project: "./web/tsconfig.json",
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
+      "@typescript-eslint/prefer-nullish-coalescing": "off",
+    },
+  },
+  // JavaScript files (skills, extensions, legacy)
   {
     files: ["**/*.js", "**/*.jsx", "**/*.cjs", "**/*.mjs"],
     languageOptions: {
@@ -78,13 +111,17 @@ export default tseslint.config(
     },
     rules: {
       "@typescript-eslint/no-require-imports": "off",
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
       "no-empty": "warn",
       "no-useless-escape": "warn",
       "no-redeclare": "off",
       "no-case-declarations": "warn",
     },
   },
+  // Relaxed rules for skill JS bundles
   {
     files: ["skills/**/*.js", "skills/**/*.mjs", "skills/**/*.cjs", "extensions/**/*.js", "extensions/**/*.mjs"],
     rules: {
@@ -94,8 +131,9 @@ export default tseslint.config(
       "@typescript-eslint/no-require-imports": "off",
     },
   },
+  // React Hooks (web/src only)
   {
-    files: ["web/src/**/*.js", "web/src/**/*.jsx"],
+    files: ["web/src/**/*.js", "web/src/**/*.jsx", "web/src/**/*.tsx"],
     plugins: {
       "react-hooks": reactHooks,
     },
@@ -103,8 +141,9 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
     },
   },
+  // Test files
   {
-    files: ["tests/**/*.test.ts", "tests/**/*.test.tsx", "tests/**/*.test.js", "tests/**/*.test.jsx"],
+    files: ["tests/**/*.test.ts", "tests/**/*.test.tsx", "tests/**/*.test.js", "tests/**/*.test.jsx", "web/src/**/*.test.tsx"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
     },
@@ -125,11 +164,7 @@ export default tseslint.config(
       "skills/**/scripts/**",
       "skills/feishu-*/**/*.js",
       "skills/feishu-*/**/*.mjs",
-      "skills/github-*/**/*.js",
-      "skills/github-*/**/*.mjs",
       "skills/fluid-memory/**/*.js",
-      "skills/openclaw-github-assistant/**/*.js",
-      "skills/openclaw-github-assistant/**/*.d.ts",
       "skills/personal-productivity/index.js",
     ],
   }

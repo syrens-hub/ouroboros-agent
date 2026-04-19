@@ -73,6 +73,15 @@ export class HookRegistry {
     this.handlers.set(event, list);
   }
 
+  unregister(event: HookEventType, handler: HandlerFn): void {
+    const list = this.handlers.get(event) || [];
+    const idx = list.indexOf(handler);
+    if (idx >= 0) {
+      list.splice(idx, 1);
+      this.handlers.set(event, list);
+    }
+  }
+
   getLoadedHooks() {
     return [...this.loadedHooks];
   }

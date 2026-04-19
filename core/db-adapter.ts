@@ -7,12 +7,20 @@
  * Callers should await all statement and adapter operations.
  */
 
+export interface DbPoolStats {
+  totalConnections: number;
+  idleConnections: number;
+  activeConnections: number;
+  waitingConnections: number;
+}
+
 export interface DbAdapter {
   prepare(sql: string): DbStatement;
   exec(sql: string): void | Promise<void>;
   pragma<T = unknown>(pragma: string): T | Promise<T>;
   close(): void | Promise<void>;
   transaction<T>(fn: () => T | Promise<T>): () => T | Promise<T>;
+  getPoolStats?(): DbPoolStats | null;
 }
 
 export interface DbStatement {

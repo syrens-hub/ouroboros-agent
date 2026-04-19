@@ -7,10 +7,12 @@ import { createBackup, listBackups, restoreBackup, maybeAutoBackup } from "../..
 import { createSession, getSession, resetDbSingleton } from "../../../core/session-db.ts";
 
 const TEST_DB_DIR = mkdtempSync(join(tmpdir(), "ouroboros-backup-"));
+const TEST_DB_PATH = join(TEST_DB_DIR, "session.db");
 
 describe("Backup", () => {
   beforeEach(() => {
     appConfig.db.dir = TEST_DB_DIR;
+    process.env.DATABASE_PATH = TEST_DB_PATH;
     resetDbSingleton();
     if (existsSync(TEST_DB_DIR)) rmSync(TEST_DB_DIR, { recursive: true, force: true });
     mkdirSync(TEST_DB_DIR, { recursive: true });
@@ -18,6 +20,7 @@ describe("Backup", () => {
 
   afterEach(() => {
     resetDbSingleton();
+    delete process.env.DATABASE_PATH;
     if (existsSync(TEST_DB_DIR)) rmSync(TEST_DB_DIR, { recursive: true, force: true });
   });
 

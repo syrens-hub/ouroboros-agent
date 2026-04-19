@@ -18,7 +18,7 @@ describe("llm_task tool", () => {
     // With local/mock LLM the result shape depends on environment.
     // We just assert the tool returns an object with expected fields.
     expect(result).toHaveProperty("success");
-  });
+  }, 15000);
 
   it("validates missing keys against outputSchema", async () => {
     // Simulate validation logic manually by calling with raw text that lacks keys

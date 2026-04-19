@@ -8,6 +8,8 @@ import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { appConfig } from "./config.ts";
+import { logger } from "./logger.ts";
+import { safeFailOpen } from "./safe-utils.ts";
 
 function getDefaultDbPath(filename: string): string {
   const dir = appConfig.db.dir.startsWith("/")
@@ -117,6 +119,12 @@ export class SecurityAuditor {
     }>;
   }
 
+  pruneOldLogs(olderThanMs: number): number {
+    const cutoff = Date.now() - olderThanMs;
+    const result = this.db.prepare("DELETE FROM security_audit_log WHERE timestamp < ?").run(cutoff);
+    return (result as { changes: number }).changes ?? 0;
+  }
+
   close(): void {
     this.db.close();
   }
@@ -157,6 +165,21 @@ export class ToolRateLimiter {
       retryAfter: 0,
     };
   }
+}
+
+/**
+ * Prune security audit logs older than the given threshold.
+ * Returns the number of deleted rows.
+ */
+export function pruneSecurityAuditLogs(olderThanMs: number): number {
+  return safeFailOpen(() => {
+    const auditor = new SecurityAuditor();
+    const deleted = auditor.pruneOldLogs(olderThanMs);
+    if (deleted > 0) {
+      logger.info("Pruned old security audit logs", { deleted });
+    }
+    return deleted;
+  }, "pruneSecurityAuditLogs", 0);
 }
 
 export function createSecurityFramework(

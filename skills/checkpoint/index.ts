@@ -17,10 +17,11 @@
 
 import { createHash } from "crypto";
 import { spawnSync } from "child_process";
-import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, rmSync } from "fs";
 import { join, relative, resolve } from "path";
 import { appConfig } from "../../core/config.ts";
 import { logger } from "../../core/logger.ts";
+import { safeIgnore } from "../../core/safe-utils.ts";
 import type { Result } from "../../types/index.ts";
 import { ok, err } from "../../types/index.ts";
 
@@ -249,7 +250,59 @@ export function createCheckpoint(workingDir: string, sessionId: string): Result<
   };
 
   logger.info("Checkpoint created", { checkpointId: checkpoint.id, workingDir: absDir, sessionId });
+  pruneOldCheckpoints();
   return ok(checkpoint);
+}
+
+/** Prune old checkpoints by count and age. */
+export function pruneOldCheckpoints(): { pruned: number; errors: string[] } {
+  const maxCount = appConfig.cleanup.maxCheckpoints;
+  const retentionMs = appConfig.cleanup.retentionDays * 24 * 60 * 60 * 1000;
+  const cutoff = Date.now() - retentionMs;
+  const errors: string[] = [];
+  let pruned = 0;
+
+  if (!existsSync(CHECKPOINT_BASE)) return { pruned, errors };
+
+  const entries = readdirSync(CHECKPOINT_BASE, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => {
+      const st = statSync(join(CHECKPOINT_BASE, e.name));
+      return { name: e.name, mtime: st.mtime.getTime() };
+    })
+    .sort((a, b) => b.mtime - a.mtime);
+
+  // Age-based pruning
+  for (const entry of entries) {
+    if (entry.mtime < cutoff) {
+      safeIgnore(() => {
+        rmSync(join(CHECKPOINT_BASE, entry.name), { recursive: true, force: true });
+        pruned++;
+        logger.info("Pruned old checkpoint", { name: entry.name, ageDays: Math.round((Date.now() - entry.mtime) / 86400000) });
+      }, `pruneOldCheckpoints:${entry.name}`);
+    }
+  }
+
+  // Count-based pruning
+  const remaining = readdirSync(CHECKPOINT_BASE, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => {
+      const st = statSync(join(CHECKPOINT_BASE, e.name));
+      return { name: e.name, mtime: st.mtime.getTime() };
+    })
+    .sort((a, b) => b.mtime - a.mtime);
+
+  if (remaining.length > maxCount) {
+    for (const entry of remaining.slice(maxCount)) {
+      safeIgnore(() => {
+        rmSync(join(CHECKPOINT_BASE, entry.name), { recursive: true, force: true });
+        pruned++;
+        logger.info("Pruned excess checkpoint", { name: entry.name });
+      }, `pruneOldCheckpoints:${entry.name}`);
+    }
+  }
+
+  return { pruned, errors };
 }
 
 export function restoreCheckpoint(checkpointId: string): Result<void> {

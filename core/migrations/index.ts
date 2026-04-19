@@ -639,4 +639,129 @@ const m013: { name: string; up: MigrationFn<Ctx> } = {
   },
 };
 
-export const migrations = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013];
+const m014: { name: string; up: MigrationFn<Ctx> } = {
+  name: "014_api_audit_log",
+  async up({ context }) {
+    const sqlite = `
+      CREATE TABLE IF NOT EXISTS api_audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp INTEGER NOT NULL,
+        request_id TEXT,
+        client_ip TEXT,
+        method TEXT NOT NULL,
+        path TEXT NOT NULL,
+        status_code INTEGER,
+        duration_ms INTEGER,
+        user_agent TEXT,
+        token_prefix TEXT,
+        origin TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_api_audit_timestamp ON api_audit_log(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_api_audit_ip ON api_audit_log(client_ip);
+      CREATE INDEX IF NOT EXISTS idx_api_audit_path ON api_audit_log(path);
+    `;
+
+    const pg = `
+      CREATE TABLE IF NOT EXISTS api_audit_log (
+        id SERIAL PRIMARY KEY,
+        timestamp BIGINT NOT NULL,
+        request_id TEXT,
+        client_ip TEXT,
+        method TEXT NOT NULL,
+        path TEXT NOT NULL,
+        status_code INTEGER,
+        duration_ms INTEGER,
+        user_agent TEXT,
+        token_prefix TEXT,
+        origin TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_api_audit_timestamp ON api_audit_log(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_api_audit_ip ON api_audit_log(client_ip);
+      CREATE INDEX IF NOT EXISTS idx_api_audit_path ON api_audit_log(path);
+    `;
+
+    await context.db.exec(context.isPostgres ? pg : sqlite);
+  },
+};
+
+const m015: { name: string; up: MigrationFn<Ctx> } = {
+  name: "015_semantic_cache",
+  async up({ context }) {
+    const sqlite = `
+      CREATE TABLE IF NOT EXISTS semantic_cache (
+        id TEXT PRIMARY KEY,
+        query_text TEXT NOT NULL,
+        query_embedding BLOB NOT NULL,
+        response TEXT NOT NULL,
+        model TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        hit_count INTEGER DEFAULT 0,
+        ttl_ms INTEGER DEFAULT 86400000
+      );
+      CREATE INDEX IF NOT EXISTS idx_semantic_cache_model ON semantic_cache(model);
+    `;
+
+    const pg = `
+      CREATE TABLE IF NOT EXISTS semantic_cache (
+        id TEXT PRIMARY KEY,
+        query_text TEXT NOT NULL,
+        query_embedding BYTEA NOT NULL,
+        response TEXT NOT NULL,
+        model TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        hit_count INTEGER DEFAULT 0,
+        ttl_ms INTEGER DEFAULT 86400000
+      );
+      CREATE INDEX IF NOT EXISTS idx_semantic_cache_model ON semantic_cache(model);
+    `;
+
+    await context.db.exec(context.isPostgres ? pg : sqlite);
+  },
+};
+
+const m016: { name: string; up: MigrationFn<Ctx> } = {
+  name: "016_ab_tests",
+  async up({ context }) {
+    const sqlite = `
+      CREATE TABLE IF NOT EXISTS ab_tests (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        control_version TEXT NOT NULL,
+        treatment_version TEXT NOT NULL,
+        traffic_split REAL NOT NULL DEFAULT 0.1,
+        status TEXT NOT NULL DEFAULT 'draft',
+        started_at INTEGER,
+        ended_at INTEGER,
+        target_module TEXT,
+        metrics_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ab_tests_status ON ab_tests(status);
+      CREATE INDEX IF NOT EXISTS idx_ab_tests_target_module ON ab_tests(target_module);
+    `;
+
+    const pg = `
+      CREATE TABLE IF NOT EXISTS ab_tests (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        control_version TEXT NOT NULL,
+        treatment_version TEXT NOT NULL,
+        traffic_split REAL NOT NULL DEFAULT 0.1,
+        status TEXT NOT NULL DEFAULT 'draft',
+        started_at BIGINT,
+        ended_at BIGINT,
+        target_module TEXT,
+        metrics_json TEXT NOT NULL DEFAULT '{}',
+        created_at BIGINT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ab_tests_status ON ab_tests(status);
+      CREATE INDEX IF NOT EXISTS idx_ab_tests_target_module ON ab_tests(target_module);
+    `;
+
+    await context.db.exec(context.isPostgres ? pg : sqlite);
+  },
+};
+
+export const migrations = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016];

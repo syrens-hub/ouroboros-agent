@@ -11,7 +11,7 @@ import { resetDbSingleton } from "../../core/db-manager.ts";
 import { appendMessage } from "../../core/session-db.ts";
 
 const TEST_DB_DIR = join(process.cwd(), ".ouroboros", "test-server-api-db-" + Date.now());
-appConfig.db.dir = TEST_DB_DIR;
+process.env.DATABASE_PATH = join(TEST_DB_DIR, "session.db");
 
 import { createApp } from "../../web/server.ts";
 import { closeWebSocket } from "../../web/ws-server.ts";
@@ -21,7 +21,8 @@ describe("Web Server API", () => {
   let port: number;
 
   beforeEach(async () => {
-    appConfig.db.dir = join(process.cwd(), ".ouroboros", "test-server-api-db-" + Date.now());
+    const dir = join(process.cwd(), ".ouroboros", "test-server-api-db-" + Date.now());
+    process.env.DATABASE_PATH = join(dir, "session.db");
     appConfig.web.apiToken = "test-token";
     resetDbSingleton();
     const app = createApp();

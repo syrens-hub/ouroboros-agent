@@ -7,7 +7,7 @@
 
 import "dotenv/config";
 import * as Sentry from "@sentry/node";
-import { appConfig } from "./core/config.ts";
+import { appConfig, validateConfig } from "./core/config.ts";
 import { join, dirname } from "path";
 import { mkdirSync, writeFileSync } from "fs";
 import { createToolPool } from "./core/tool-framework.ts";
@@ -23,22 +23,89 @@ import {
 } from "./skills/learning/index.ts";
 import { selfModifyTool, ruleEngineOverrideTool } from "./skills/self-modify/index.ts";
 import { agentLoopTool, createAgentLoopRunner, createMockLLMCaller } from "./skills/agent-loop/index.ts";
-import { createSessionArchiver } from "./skills/session-archiver/index.ts";
 import { createCheckpoint } from "./skills/checkpoint/index.ts";
 import { META_RULE_AXIOM } from "./core/rule-engine.ts";
 import { getMessages, getSession, getTrajectories, getSkillRegistry } from "./core/session-db.ts";
 import { maybeAutoBackup } from "./skills/backup/index.ts";
 import type { LLMConfig } from "./core/llm-router.ts";
 
-// 全局定时器引用
-let backupTimer: NodeJS.Timeout | undefined;
-let runnerInstance: ReturnType<typeof createAgentLoopRunner> | undefined;
+// =============================================================================
+// AppContext — 应用生命周期状态管理
+// =============================================================================
+
+class AppContext {
+  private backupTimer?: NodeJS.Timeout;
+  private runnerInstance?: ReturnType<typeof createAgentLoopRunner>;
+
+  setBackupTimer(timer: NodeJS.Timeout) {
+    this.backupTimer = timer;
+  }
+
+  clearBackupTimer() {
+    if (this.backupTimer) {
+      clearInterval(this.backupTimer);
+      this.backupTimer = undefined;
+    }
+  }
+
+  setRunner(runner: ReturnType<typeof createAgentLoopRunner>) {
+    this.runnerInstance = runner;
+  }
+
+  getRunner() {
+    return this.runnerInstance;
+  }
+
+  async shutdown(signal: string) {
+    console.log(`\nReceived ${signal}, shutting down gracefully...`);
+
+    // 1. 保存循环状态快照
+    if (this.runnerInstance) {
+      try {
+        const snapshot = this.runnerInstance.exportState();
+        const snapshotPath = join(process.cwd(), ".ouroboros", `loop-snapshot-${snapshot.sessionId}.json`);
+        mkdirSync(dirname(snapshotPath), { recursive: true });
+        writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2), "utf-8");
+        console.log(`Loop state snapshot saved: ${snapshotPath}`);
+      } catch (e) {
+        console.error("Failed to save loop state snapshot:", e);
+      }
+
+      // 2. 保存最终 checkpoint
+      try {
+        const cp = createCheckpoint(process.cwd(), this.runnerInstance.getState().sessionId);
+        if (cp.success) {
+          console.log(`Final checkpoint created: ${cp.data.id}`);
+        }
+      } catch (e) {
+        console.error("Failed to create final checkpoint:", e);
+      }
+    }
+
+    // 3. 清理定时器
+    this.clearBackupTimer();
+
+    console.log("Resource cleanup confirmed. Goodbye!\n");
+    process.exit(0);
+  }
+}
+
+const appCtx = new AppContext();
 
 // =============================================================================
 // Bootstrap
 // =============================================================================
 
 async function main() {
+  const validation = validateConfig();
+  if (!validation.valid) {
+    console.error("Configuration validation failed:");
+    for (const err of validation.errors) {
+      console.error(`  - ${err}`);
+    }
+    throw new Error(`Invalid configuration:\n${validation.errors.map((e) => "  - " + e).join("\n")}`);
+  }
+
   console.log("\n╔══════════════════════════════════════════════════════════════╗");
   console.log("║                 O U R O B O R O S   A G E N T                ║");
   console.log("╠══════════════════════════════════════════════════════════════╣");
@@ -123,8 +190,9 @@ async function main() {
   }
 
   // Schedule daily auto-backup - 保存引用以便清理
-  const backupTimer = setInterval(() => maybeAutoBackup(), 24 * 60 * 60 * 1000);
-  backupTimer.unref(); // 防止阻止进程退出
+  const timer = setInterval(() => maybeAutoBackup(), 24 * 60 * 60 * 1000);
+  timer.unref(); // 防止阻止进程退出
+  appCtx.setBackupTimer(timer);
   maybeAutoBackup().catch((e) => {
     // Intentionally non-fatal: auto-backup failure should not block startup
     console.error("Auto-backup failed during startup:", e);
@@ -147,7 +215,7 @@ async function main() {
     llmCaller,
     enableBackgroundReview: !!llmCfg,
   });
-  runnerInstance = runner;
+  appCtx.setRunner(runner);
 
   // Demo inputs
   const demos = [
@@ -216,52 +284,8 @@ async function main() {
   console.log("═══════════════════════════════════════════════════════════════\n");
 }
 
-async function shutdown(signal: string) {
-  console.log(`\nReceived ${signal}, shutting down gracefully...`);
-
-  // 1. 保存循环状态快照
-  if (runnerInstance) {
-    try {
-      const snapshot = runnerInstance.exportState();
-      const snapshotPath = join(process.cwd(), ".ouroboros", `loop-snapshot-${snapshot.sessionId}.json`);
-      mkdirSync(dirname(snapshotPath), { recursive: true });
-      writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2), "utf-8");
-      console.log(`Loop state snapshot saved: ${snapshotPath}`);
-    } catch (e) {
-      console.error("Failed to save loop state snapshot:", e);
-    }
-
-    // 2. 保存最终 checkpoint
-    try {
-      const cp = createCheckpoint(process.cwd(), runnerInstance.getState().sessionId);
-      if (cp.success) {
-        console.log(`Final checkpoint created: ${cp.data.id}`);
-      }
-    } catch (e) {
-      console.error("Failed to create final checkpoint:", e);
-    }
-  }
-
-  // 3. 触发 Session 归档
-  try {
-    const archiver = createSessionArchiver({ archive_path: join(process.cwd(), ".ouroboros", "archive") });
-    const stats = await archiver.run();
-    console.log(`Session archiver stats: hot=${stats.hotSessions}, warm=${stats.warmSessions}, cold=${stats.coldSessions}, archived=${stats.archivedCount}, cleaned=${stats.cleanedCount}`);
-  } catch (e) {
-    console.error("Session archiver failed:", e);
-  }
-
-  // 4. 清理定时器
-  if (typeof backupTimer !== 'undefined') {
-    clearInterval(backupTimer);
-  }
-
-  console.log("Resource cleanup confirmed. Goodbye!\n");
-  process.exit(0);
-}
-
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => appCtx.shutdown("SIGTERM"));
+process.on("SIGINT", () => appCtx.shutdown("SIGINT"));
 
 // =============================================================================
 // Sentry initialization

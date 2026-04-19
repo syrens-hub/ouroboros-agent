@@ -8,8 +8,9 @@
  *   npm install -D @types/pg
  */
 
-import type { DbAdapter, DbStatement } from "./db-adapter.ts";
+import type { DbAdapter, DbPoolStats, DbStatement } from "./db-adapter.ts";
 import type { Pool, PoolClient } from "pg";
+import { recordDbQuery, recordDbTransaction } from "./db-metrics.ts";
 
 let PgPool: typeof Pool | undefined;
 
@@ -56,21 +57,33 @@ class PgStatement implements DbStatement {
   }
 }
 
+export interface PgDbAdapterOptions {
+  poolSize?: number;
+}
+
 export class PgDbAdapter implements DbAdapter {
   private pool: Pool;
   private txClient: PoolClient | null = null;
 
-  constructor(connectionString: string) {
+  constructor(connectionString: string, opts: PgDbAdapterOptions = {}) {
     if (!PgPool) {
       throw new Error("PostgreSQL driver 'pg' is not installed. Run: npm install pg");
     }
-    this.pool = new PgPool({ connectionString, max: 20 });
+    this.pool = new PgPool({ connectionString, max: opts.poolSize ?? 20 });
   }
 
   private getQueryFn() {
-    return this.txClient
+    const base = this.txClient
       ? (sql: string, values?: unknown[]) => this.txClient!.query(sql, values)
       : (sql: string, values?: unknown[]) => this.pool.query(sql, values);
+    return async (sql: string, values?: unknown[]) => {
+      const start = performance.now();
+      try {
+        return await base(sql, values);
+      } finally {
+        recordDbQuery((performance.now() - start) / 1000, "postgres");
+      }
+    };
   }
 
   prepare(sql: string): DbStatement {
@@ -89,6 +102,15 @@ export class PgDbAdapter implements DbAdapter {
     return this.pool.end();
   }
 
+  getPoolStats(): DbPoolStats {
+    return {
+      totalConnections: this.pool.totalCount,
+      idleConnections: this.pool.idleCount,
+      activeConnections: this.pool.totalCount - this.pool.idleCount,
+      waitingConnections: this.pool.waitingCount,
+    };
+  }
+
   transaction<T>(fn: () => T | Promise<T>): () => Promise<T> {
     return async () => {
       const client = await this.pool.connect();
@@ -96,6 +118,7 @@ export class PgDbAdapter implements DbAdapter {
       this.txClient = client;
       try {
         await client.query("BEGIN");
+        recordDbTransaction("postgres");
         const result = await fn();
         await client.query("COMMIT");
         return result;

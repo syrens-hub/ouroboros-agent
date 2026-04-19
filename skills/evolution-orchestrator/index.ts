@@ -17,6 +17,8 @@ import type { KnowledgeBase } from "../knowledge-base/index.ts";
 import { recordEvolutionMemory, queryEvolutionMemory, deriveLesson } from "../evolution-memory/index.ts";
 import { applyDiffs, restoreBackup } from "../self-modify/index.ts";
 import { logger } from "../../core/logger.ts";
+import { getDistributedLock } from "../../core/distributed-lock.ts";
+import { appConfig } from "../../core/config.ts";
 
 import type { EvolutionProposal, PipelineResult, PipelineOptions } from "./types.ts";
 export type { EvolutionProposal, PipelineResult, PipelineOptions } from "./types.ts"; // re-export for backward compatibility
@@ -228,96 +230,112 @@ export async function executeEvolution(
   changedFiles: string[],
   ownerId: string
 ): Promise<PipelineResult> {
-  // Stage 1: Re-acquire lock
-  if (!evolutionLock.acquire(ownerId)) {
+  // Stage 0: Acquire distributed lock (prevents concurrent execution across instances)
+  const distributedLock = getDistributedLock();
+  const lockTtlMs = appConfig.redis.lockTtlMs || 60000;
+  const distLock = await distributedLock.acquire("evolution:execution", lockTtlMs);
+  if (!distLock) {
     return {
       success: false,
       stage: "lock",
-      message: `Evolution lock is held by ${evolutionLock.getOwner() ?? "unknown"}`,
+      message: "Another evolution is already in progress (distributed lock)",
     };
   }
 
   try {
-    // Stage 2: Mark version as applied
-    const applied = evolutionVersionManager.markApplied(versionId);
-    if (!applied) {
+    // Stage 1: Re-acquire local lock
+    if (!evolutionLock.acquire(ownerId)) {
       return {
         success: false,
-        stage: "version",
-        message: `Version ${versionId} not found or already applied`,
+        stage: "lock",
+        message: `Evolution lock is held by ${evolutionLock.getOwner() ?? "unknown"}`,
       };
     }
 
-    // Stage 3: Apply diffs (the actual self-modification)
-    const version = evolutionVersionManager.getVersion(versionId);
-    let backupPath: string | undefined;
-    if (version?.diffs && Object.keys(version.diffs).length > 0) {
-      const applyResult = applyDiffs(version.diffs, { skipSyntaxCheck: false, skipBackup: false });
-      backupPath = applyResult.backupPath;
-      if (!applyResult.success) {
-        // Revert applied status
-        evolutionVersionManager.updateTestStatus(versionId, "rollback");
-        logger.error("Diff application failed", {
-          versionId,
-          failures: applyResult.filesFailed,
-        });
+    try {
+      // Stage 2: Mark version as applied
+      const applied = evolutionVersionManager.markApplied(versionId);
+      if (!applied) {
         return {
           success: false,
-          stage: "self-modify",
-          message: `Diff application failed: ${applyResult.filesFailed.map((f) => `${f.path}: ${f.error}`).join("; ")}`,
-          versionId,
+          stage: "version",
+          message: `Version ${versionId} not found or already applied`,
         };
       }
-      logger.info("Diffs applied", { versionId, files: applyResult.filesApplied });
-    }
 
-    // Stage 4: Record freeze period
-    changeFreezePeriod.recordEvolution();
-
-    // Stage 5: Run incremental tests
-    const testResult = await incrementalTestRunner.run({
-      changedFiles,
-      mode: "incremental",
-    });
-
-    // Stage 6: Update version test status
-    evolutionVersionManager.updateTestStatus(versionId, testResult.status);
-
-    // Stage 7: If tests failed, roll back diffs
-    if (testResult.status === "failed" && backupPath) {
-      try {
-        restoreBackup(`evo-${Date.now()}`, backupPath);
-        logger.info("Rolled back diffs due to test failure", { versionId });
-      } catch (e) {
-        logger.error("Rollback after test failure failed", { versionId, error: String(e) });
+      // Stage 3: Apply diffs (the actual self-modification)
+      const version = evolutionVersionManager.getVersion(versionId);
+      let backupPath: string | undefined;
+      if (version?.diffs && Object.keys(version.diffs).length > 0) {
+        const applyResult = applyDiffs(version.diffs, { skipSyntaxCheck: false, skipBackup: false });
+        backupPath = applyResult.backupPath;
+        if (!applyResult.success) {
+          // Revert applied status
+          evolutionVersionManager.updateTestStatus(versionId, "rollback");
+          logger.error("Diff application failed", {
+            versionId,
+            failures: applyResult.filesFailed,
+          });
+          return {
+            success: false,
+            stage: "self-modify",
+            message: `Diff application failed: ${applyResult.filesFailed.map((f) => `${f.path}: ${f.error}`).join("; ")}`,
+            versionId,
+          };
+        }
+        logger.info("Diffs applied", { versionId, files: applyResult.filesApplied });
       }
+
+      // Stage 4: Record freeze period
+      changeFreezePeriod.recordEvolution();
+
+      // Stage 5: Run incremental tests
+      const testResult = await incrementalTestRunner.run({
+        changedFiles,
+        mode: "incremental",
+      });
+
+      // Stage 6: Update version test status
+      evolutionVersionManager.updateTestStatus(versionId, testResult.status);
+
+      // Stage 7: If tests failed, roll back diffs
+      if (testResult.status === "failed" && backupPath) {
+        try {
+          restoreBackup(`evo-${Date.now()}`, backupPath);
+          logger.info("Rolled back diffs due to test failure", { versionId });
+        } catch (e) {
+          logger.error("Rollback after test failure failed", { versionId, error: String(e) });
+        }
+        return {
+          success: false,
+          stage: "test",
+          message: `Tests failed (${testResult.passed} passed, ${testResult.failed} failed) — rolled back`,
+          versionId,
+          testRunId: testResult.runId,
+        };
+      }
+
+      // Stage 8: Record budget if needed (placeholder — actual cost tracked elsewhere)
+      budgetController.recordSpend(0.01); // nominal tracking cost
+
+      logger.info("Evolution executed and tested", {
+        versionId,
+        testRunId: testResult.runId,
+        testStatus: testResult.status,
+      });
+
       return {
-        success: false,
+        success: testResult.status !== "failed",
         stage: "test",
-        message: `Tests failed (${testResult.passed} passed, ${testResult.failed} failed) — rolled back`,
+        message: `Tests ${testResult.status} (${testResult.passed} passed, ${testResult.failed} failed)`,
         versionId,
         testRunId: testResult.runId,
       };
+    } finally {
+      evolutionLock.release(ownerId);
     }
-
-    // Stage 8: Record budget if needed (placeholder — actual cost tracked elsewhere)
-    budgetController.recordSpend(0.01); // nominal tracking cost
-
-    logger.info("Evolution executed and tested", {
-      versionId,
-      testRunId: testResult.runId,
-      testStatus: testResult.status,
-    });
-
-    return {
-      success: testResult.status !== "failed",
-      stage: "test",
-      message: `Tests ${testResult.status} (${testResult.passed} passed, ${testResult.failed} failed)`,
-      versionId,
-      testRunId: testResult.runId,
-    };
   } finally {
-    evolutionLock.release(ownerId);
+    await distributedLock.release(distLock);
   }
 }
 
