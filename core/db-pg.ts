@@ -31,28 +31,34 @@ function convertPlaceholders(sql: string): string {
 }
 
 class PgStatement implements DbStatement {
+  private readonly _sql: string;
+  private readonly _query: (sql: string, values?: unknown[]) => Promise<{ rows: unknown[] }>;
+
   constructor(
-    private readonly sql: string,
-    private readonly query: (sql: string, values?: unknown[]) => Promise<{ rows: unknown[] }>
-  ) {}
+    sql: string,
+    query: (sql: string, values?: unknown[]) => Promise<{ rows: unknown[] }>
+  ) {
+    this._sql = sql;
+    this._query = query;
+  }
 
   async run(...params: unknown[]): Promise<{ changes: number; lastInsertRowid: number | bigint }> {
-    const converted = convertPlaceholders(this.sql);
-    const result = await this.query(converted, params);
+    const converted = convertPlaceholders(this._sql);
+    const result = await this._query(converted, params);
     const changes = (result as { rowCount?: number }).rowCount ?? 0;
     const lastInsertRowid = (result as { rows: { id?: number | bigint }[] }).rows?.[0]?.id ?? 0;
     return { changes, lastInsertRowid };
   }
 
   async get(...params: unknown[]): Promise<unknown | undefined> {
-    const converted = convertPlaceholders(this.sql);
-    const result = await this.query(converted, params);
+    const converted = convertPlaceholders(this._sql);
+    const result = await this._query(converted, params);
     return result.rows[0];
   }
 
   async all(...params: unknown[]): Promise<unknown[]> {
-    const converted = convertPlaceholders(this.sql);
-    const result = await this.query(converted, params);
+    const converted = convertPlaceholders(this._sql);
+    const result = await this._query(converted, params);
     return result.rows;
   }
 }

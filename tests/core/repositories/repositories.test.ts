@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { appConfig } from "../../../core/config.ts";
 import { resetDbSingleton, getDb } from "../../../core/db-manager.ts";
+import { existsSync, unlinkSync } from "fs";
+import { join, basename } from "path";
 
 const originalUsePostgres = appConfig.db.usePostgres;
 
@@ -49,10 +51,34 @@ import {
   getMessages,
 } from "../../../core/repositories/message.ts";
 
+function getTestDbPath(): string {
+  const configuredPath = appConfig.database.sqlite.path;
+  const baseDir = configuredPath.startsWith("/")
+    ? configuredPath.slice(0, configuredPath.lastIndexOf("/"))
+    : join(process.cwd(), configuredPath.slice(0, configuredPath.lastIndexOf("/")));
+  const dir = process.env.VITEST && appConfig.db.dir === ".ouroboros"
+    ? join(baseDir, `vitest-${process.env.VITEST_POOL_ID || process.pid}`)
+    : baseDir;
+  return join(dir, basename(configuredPath));
+}
+
+function removeTestDbFile(): void {
+  const dbPath = getTestDbPath();
+  for (const ext of ["", "-wal", "-shm"]) {
+    try {
+      const p = dbPath + ext;
+      if (existsSync(p)) unlinkSync(p);
+    } catch {
+      // ignore
+    }
+  }
+}
+
 describe("core/repositories", () => {
   beforeEach(() => {
     appConfig.db.usePostgres = false;
     resetDbSingleton();
+    removeTestDbFile();
   });
 
   afterEach(() => {

@@ -1,6 +1,11 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@modelcontextprotocol/sdk": "./tests/mocks/mcp-sdk.ts",
+    },
+  },
   test: {
     include: ["tests/**/*.test.ts"],
     exclude: ["node_modules", "web/node_modules", "e2e", "dist", ".ouroboros"],
