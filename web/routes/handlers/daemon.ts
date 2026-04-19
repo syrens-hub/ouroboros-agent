@@ -15,7 +15,7 @@ export async function handleDaemon(
     return true;
   }
   if (path === "/api/daemon/history" && method === "GET") {
-    json(res, 200, { success: true, data: { message: "History moved to evolution-memory" } }, ctx);
+    json(res, 200, { success: true, data: [] }, ctx);
     return true;
   }
   if (path === "/api/daemon/start" && method === "POST") {

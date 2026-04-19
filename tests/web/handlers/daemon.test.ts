@@ -57,7 +57,7 @@ describe("handleDaemon", () => {
     expect(mockJson).toHaveBeenCalledWith(
       res,
       200,
-      { success: true, data: { message: "History moved to evolution-memory" } },
+      { success: true, data: [] },
       expect.any(Object)
     );
   });

@@ -142,7 +142,7 @@ export class SnapshotManager {
           ? "SELECT id FROM snapshots WHERE session_id = ? ORDER BY timestamp DESC"
           : "SELECT id FROM snapshots ORDER BY timestamp DESC"
       )
-      .all(sessionId) as { id: string }[];
+      .all(...(sessionId ? [sessionId] : [])) as { id: string }[];
     // Load directly from DB without cache to avoid N+1 queries
     return rows.map((r) => this.loadSnapshotDirect(r.id)).filter((s): s is SystemSnapshot => !!s);
   }
