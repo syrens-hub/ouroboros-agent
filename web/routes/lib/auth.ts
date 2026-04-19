@@ -22,7 +22,7 @@ export function isAuthValid(req: IncomingMessage, urlPath: string): boolean {
     if (process.env.NODE_ENV === "production") {
       return false;
     }
-    if (process.env.NODE_ENV === "development") {
+    if (process.env.NODE_ENV === "development" || !process.env.NODE_ENV) {
       if (!_authWarningEmitted) {
         _authWarningEmitted = true;
         console.warn(

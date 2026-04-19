@@ -59,7 +59,7 @@ export function serveIndex(res: ServerResponse, ctx: ReqContext) {
     injects.push(`<script>window.__SENTRY_DSN__=${JSON.stringify(appConfig.sentry.dsn)};window.__SENTRY_ENV__=${JSON.stringify(appConfig.sentry.environment)}</script>`);
   }
   if (injects.length > 0) {
-    html = html.replace("<head>", `<head>\n${injects.join("\n")}`);
+    html = html.replace("</head>", `${injects.join("\n")}\n</head>`);
   }
   res.writeHead(200, { "Content-Type": "text/html", "X-Request-ID": ctx.requestId });
   res.end(html);

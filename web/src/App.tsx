@@ -17,13 +17,13 @@ import { ToastContainer } from './components/ToastContainer'
 import { useSessionStore } from './store/sessionStore'
 import { apiFetch } from './api'
 
-const SystemDashboard = lazy(() => import('./components/dashboard/SystemDashboard'))
-const SkillManager = lazy(() => import('./components/SkillManager'))
-const KnowledgeBaseManager = lazy(() => import('./components/KnowledgeBaseManager'))
-const Gallery = lazy(() => import('./components/Gallery'))
-const WorkflowStudio = lazy(() => import('./components/WorkflowStudio'))
-const MemoryBrowser = lazy(() => import('./components/MemoryBrowser'))
-const TokenUsagePage = lazy(() => import('./components/TokenUsagePage'))
+const SystemDashboard = lazy(() => import('./components/dashboard/SystemDashboard').then(m => ({ default: m.SystemDashboard })))
+const SkillManager = lazy(() => import('./components/SkillManager').then(m => ({ default: m.SkillManager })))
+const KnowledgeBaseManager = lazy(() => import('./components/KnowledgeBaseManager').then(m => ({ default: m.KnowledgeBaseManager })))
+const Gallery = lazy(() => import('./components/Gallery').then(m => ({ default: m.Gallery })))
+const WorkflowStudio = lazy(() => import('./components/WorkflowStudio').then(m => ({ default: m.WorkflowStudio })))
+const MemoryBrowser = lazy(() => import('./components/MemoryBrowser').then(m => ({ default: m.MemoryBrowser })))
+const TokenUsagePage = lazy(() => import('./components/TokenUsagePage').then(m => ({ default: m.TokenUsagePage })))
 
 const PAGES = {
   CHAT: 'chat',

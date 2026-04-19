@@ -96,15 +96,18 @@ export function createApp(): Server {
         return;
       }
 
-      // Per-IP rate limiting for API and webhook endpoints
+      // Per-IP rate limiting for API and webhook endpoints (skip localhost in dev/test)
       if (path.startsWith("/api/") || path.startsWith("/webhooks/")) {
         const clientIp = req.headers["x-forwarded-for"]?.toString().split(",")[0].trim() || req.socket.remoteAddress || "unknown";
-        const rateLimitKey = `http:${clientIp}`;
-        const rateLimit = await checkRateLimit(rateLimitKey, 100, 60_000); // 100 req/min per IP
-        if (!rateLimit.allowed) {
-          res.setHeader("Retry-After", String(Math.ceil(rateLimit.retryAfter / 1000)));
-          json(res, 429, { success: false, error: { message: "Too many requests. Please slow down." } }, ctx);
-          return;
+        const isLocalhost = clientIp === "127.0.0.1" || clientIp === "::1" || clientIp === "::ffff:127.0.0.1";
+        if (!isLocalhost) {
+          const rateLimitKey = `http:${clientIp}`;
+          const rateLimit = await checkRateLimit(rateLimitKey, 100, 60_000); // 100 req/min per IP
+          if (!rateLimit.allowed) {
+            res.setHeader("Retry-After", String(Math.ceil(rateLimit.retryAfter / 1000)));
+            json(res, 429, { success: false, error: { message: "Too many requests. Please slow down." } }, ctx);
+            return;
+          }
         }
       }
 
