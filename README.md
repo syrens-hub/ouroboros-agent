@@ -1,10 +1,32 @@
-# Ouroboros（衔尾蛇）Agent 极简技术总结
+# Ouroboros（衔尾蛇）Agent
+
+<p align="center">
+  <img src="https://img.shields.io/badge/version-0.9.0-blue" alt="version" />
+  <img src="https://img.shields.io/badge/Node.js-%3E%3D20.0.0-brightgreen" alt="node" />
+  <img src="https://img.shields.io/badge/license-MIT-yellow" alt="license" />
+  <img src="https://img.shields.io/badge/tests-vitest-purple" alt="tests" />
+</p>
 
 > **一句话定位**：一个能自己改自己代码、自己提交 Git、自己持续进化的开源 AI 系统，目标是做「有持久身份的连续数字实体」，不是一次性脚本。
 
 ---
 
-## 一、核心解决什么痛点？
+## 目录
+
+- [核心痛点](#核心痛点)
+- [关键功能](#关键功能)
+- [快速开始](#快速开始)
+- [Demo 脚本](#demo-脚本)
+- [架构概览](#架构概览)
+- [设计模式](#设计模式)
+- [自我修改流程](#自我修改流程)
+- [环境变量](#环境变量)
+- [文档](#文档)
+- [许可证](#许可证)
+
+---
+
+## 核心痛点
 
 传统 Agent 三大问题：
 
@@ -21,7 +43,7 @@ Ouroboros 用这套机制破局：
 
 ---
 
-## 二、最关键功能
+## 关键功能
 
 1. **宪法驱动（BIBLE.md）**
    9 条原则，硬约束：不能删核心身份、不能支付、不能违法，运行时真会遵守。
@@ -40,61 +62,52 @@ Ouroboros 用这套机制破局：
 
 ---
 
-## 三、极简架构（两层）
-
-- **监督层（supervisor）**
-  进程管理、任务队列、Git、持久化（Google Drive）、多进程 Worker。
-
-- **代理核心（ouroboros）**
-  - `loop`：并发工具 + 提示缓存
-  - `context`：上下文构建压缩
-  - `consciousness`：后台意识
-  - `tools`：插件式注册，易扩展
-
----
-
-## 四、怎么跑
-
-- **最简单**：Google Colab + Fork 仓库 + 填密钥 → 跑启动脚本
-- **本地**：Linux/macOS/WSL，配环境变量，挂载 Google Drive 或改路径
-
----
-
-## 五、适合谁
-
-- **初学者**：学现代 Agent 架构的 "活教材"
-- **开发者**：研究自修改、多模型协同、可信 Agent
-- **产品**：验证自主助手原型，但要严控风险
-
----
-
-> **Immutable floor**: `core/rule-engine.ts`. Everything else — including the **Agent Loop itself** — is a **Skill** that can be learned, patched, and replaced.
-
----
-
-## Quick Start
+## 快速开始
 
 **Requirements**: Node.js >= 20.0.0 (check with `node -v`).
 
 ```bash
-cd ~/ouroboros-agent
-npm install
+# 1. 克隆仓库
+git clone https://github.com/your-org/ouroboros-agent.git
+cd ouroboros-agent
 
-# If better-sqlite3 fails to load, rebuild the native module:
+# 2. 安装依赖
+npm install
+# 若 better-sqlite3 编译失败：
 npm rebuild better-sqlite3
 
-# Run the main interactive demo (mock LLM)
-npx tsx main.ts
-
-# Test LLM connectivity (requires .env)
+# 3. 配置环境变量
 cp .env.example .env
-# Edit .env to add your API key
+# 编辑 .env，填入 LLM_API_KEY 等
+
+# 4. 启动 Web 服务（前端 + API + WebSocket）
+npm run dev
+
+# 5. 打开浏览器访问 http://localhost:8080
+```
+
+### 验证 LLM 连通性
+
+```bash
 npx tsx scripts/test-llm.ts
+```
+
+### 运行测试
+
+```bash
+# 后端单元测试
+npm test
+
+# 前端单元测试
+cd web && npm test
+
+# E2E 测试
+npm run e2e
 ```
 
 ---
 
-## Demo Scripts
+## Demo 脚本
 
 | Script | What it proves |
 |--------|----------------|
@@ -109,7 +122,7 @@ npx tsx scripts/test-llm.ts
 
 ---
 
-## Architecture
+## 架构概览
 
 ```
 core/                   # Immutable kernel (3 sacred files)
@@ -141,7 +154,6 @@ skills/                 # Everything is a Skill — including the Agent Loop
   self-healing/         # Anomaly detection, snapshots, rollback, repair
   rate-limiter/         # Token-bucket rate limiting (API + per-user)
   self-modify/          # Gateway for all self-mutations
-  session-archiver/     # Session archiving & cleanup
   skill-versioning/     # Skill snapshot, restore, and version history
   skills-guard/         # Runtime validation of skill safety constraints
   smart-cache/          # LRU cache with TTL and size eviction
@@ -160,9 +172,11 @@ web/                    # Vite + React 18 SPA with WebSocket real-time chat + HT
 k8s/                    # Kubernetes manifests + HPA
 ```
 
+> **Immutable floor**: `core/rule-engine.ts`. Everything else — including the **Agent Loop itself** — is a **Skill** that can be learned, patched, and replaced.
+
 ---
 
-## Key Design Patterns
+## 设计模式
 
 ### 1. Fail-Closed Tools
 Every new tool defaults to `isReadOnly: false` and `isConcurrencySafe: false`. It must explicitly opt-in to broader permissions.
@@ -211,7 +225,7 @@ When Redis is available (`REDIS_URL`), WebSocket broadcasts use Redis Pub/Sub so
 
 ---
 
-## Self-Modification Flow
+## 自我修改流程
 
 1. User asks the agent to improve its loop
 2. Agent reads `skills/agent-loop/index.ts` via `read_file`
@@ -223,7 +237,7 @@ When Redis is available (`REDIS_URL`), WebSocket broadcasts use Redis Pub/Sub so
 
 ---
 
-## Environment Variables
+## 环境变量
 
 Copy `.env.example` to `.env` and configure:
 
@@ -248,8 +262,25 @@ REDIS_URL=redis://localhost:6379/0
 SLOW_QUERY_THRESHOLD_MS=500
 ```
 
+完整环境变量列表见 [docs/configuration.md](./docs/configuration.md)。
+
+---
+
+## 文档
+
+| 文档 | 说明 |
+|---|---|
+| [AGENTS.md](./AGENTS.md) | AI 辅助开发指南：架构、编码规范、测试、自我修改安全流程 |
+| [docs/architecture.md](./docs/architecture.md) | 系统架构详解：核心模块、数据流、自我进化流水线、前端架构 |
+| [docs/api.md](./docs/api.md) | HTTP API 与 WebSocket 协议文档 |
+| [docs/configuration.md](./docs/configuration.md) | 完整环境变量参考与生产配置模板 |
+| [docs/contributing.md](./docs/contributing.md) | 开发环境搭建、提交规范、PR 流程、测试要求、安全审核 |
+| [docs/deployment.md](./docs/deployment.md) | Docker / Compose / K8s / 裸机部署指南 |
+| [docs/postgresql-migration.md](./docs/postgresql-migration.md) | SQLite → PostgreSQL 迁移指南 |
+| [docs/adr/001-postgresql-default.md](./docs/adr/001-postgresql-default.md) | 架构决策记录：数据库后端选择 |
+
 ---
 
 ## License
 
-MIT (or specify your own)
+MIT

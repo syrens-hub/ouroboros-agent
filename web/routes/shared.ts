@@ -6,8 +6,6 @@
  */
 
 import "dotenv/config";
-import { notificationBus, type NotificationEvent } from "../../skills/notification/index.ts";
-import { broadcastNotification } from "../ws-server.ts";
 import { hookRegistry } from "../../core/hook-system.ts";
 import { initSentry } from "../../core/sentry.ts";
 
@@ -31,17 +29,6 @@ import { WebhookManager } from "../../skills/webhooks/index.ts";
 import { LearningEngine } from "../../skills/learning/engine.ts";
 
 initSentry();
-
-notificationBus.on("notification", (evt: NotificationEvent) => {
-  broadcastNotification(evt);
-  hookRegistry.emit("notification", {
-    type: evt.type,
-    title: evt.title,
-    message: evt.message,
-    timestamp: evt.timestamp,
-    ...evt.meta,
-  }).catch(() => {});
-});
 
 hookRegistry.registerBuiltins();
 hookRegistry.discoverAndLoad();
@@ -102,6 +89,7 @@ export {
 } from "./lib/metrics.ts";
 
 export { getHealthStatus } from "./lib/health.ts";
+export { recordApiAudit, pruneApiAuditLogs } from "./lib/audit.ts";
 
 export async function getPrometheusMetrics(): Promise<string> {
   const { getPrometheusMetrics: _getPrometheusMetrics } = await import("./lib/metrics.ts");

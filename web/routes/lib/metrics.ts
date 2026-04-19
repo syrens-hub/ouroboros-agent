@@ -9,6 +9,8 @@ import { MAX_METRIC_HISTOGRAM_KEYS } from "../constants.ts";
 import type { ReqContext } from "./context.ts";
 import { getClientIp } from "./context.ts";
 import type { TaskScheduler } from "../../../skills/task-scheduler/index.ts";
+import { dbQueryCounter, dbQueryDurationHistogram, dbTransactionCounter } from "../../../core/db-metrics.ts";
+import { getDb } from "../../../core/db-manager.ts";
 
 const requestCounter = new Map<string, number>();
 const requestDurationHistogram = new Map<string, number>();
@@ -124,6 +126,47 @@ export async function getPrometheusMetrics(taskScheduler?: TaskScheduler): Promi
   for (const cb of cbStates) {
     const stateValue = cb.state === "OPEN" ? 1 : cb.state === "HALF_OPEN" ? 2 : 0;
     lines.push(`ouroboros_circuit_breaker_state{provider="${cb.provider}"} ${stateValue}`);
+  }
+
+  // Database pool stats (PostgreSQL only)
+  try {
+    const db = getDb();
+    const poolStats = db.getPoolStats?.();
+    if (poolStats) {
+      lines.push("# HELP db_connections_total Total connections in the pool");
+      lines.push("# TYPE db_connections_total gauge");
+      lines.push(`db_connections_total{backend="postgres"} ${poolStats.totalConnections}`);
+      lines.push("# HELP db_connections_idle Idle connections in the pool");
+      lines.push("# TYPE db_connections_idle gauge");
+      lines.push(`db_connections_idle{backend="postgres"} ${poolStats.idleConnections}`);
+      lines.push("# HELP db_connections_active Active (checked-out) connections");
+      lines.push("# TYPE db_connections_active gauge");
+      lines.push(`db_connections_active{backend="postgres"} ${poolStats.activeConnections}`);
+      lines.push("# HELP db_connections_waiting Clients waiting for a connection");
+      lines.push("# TYPE db_connections_waiting gauge");
+      lines.push(`db_connections_waiting{backend="postgres"} ${poolStats.waitingConnections}`);
+    }
+  } catch {
+    // ignore if db not ready
+  }
+
+  // Database query metrics
+  lines.push("# HELP db_queries_total Total database queries");
+  lines.push("# TYPE db_queries_total counter");
+  for (const [key, value] of dbQueryCounter) {
+    lines.push(`${key} ${value}`);
+  }
+
+  lines.push("# HELP db_query_duration_seconds Database query duration");
+  lines.push("# TYPE db_query_duration_seconds histogram");
+  for (const [key, value] of dbQueryDurationHistogram) {
+    lines.push(`${key} ${value}`);
+  }
+
+  lines.push("# HELP db_transactions_total Total database transactions");
+  lines.push("# TYPE db_transactions_total counter");
+  for (const [key, value] of dbTransactionCounter) {
+    lines.push(`${key} ${value}`);
   }
 
   return lines.join("\n") + "\n";

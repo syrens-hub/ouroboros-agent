@@ -9,7 +9,7 @@ import "dotenv/config";
 import { type Server, createServer } from "http";
 import { existsSync, statSync, readdirSync, rmdirSync, unlinkSync } from "fs";
 import { join } from "path";
-import { appConfig } from "../core/config.ts";
+import { appConfig, validateConfig } from "../core/config.ts";
 import { logger } from "../core/logger.ts";
 import { notificationBus } from "../skills/notification/index.ts";
 import { maybeAutoBackup } from "../skills/backup/index.ts";
@@ -54,11 +54,16 @@ import {
   setSecurityHeaders,
   logRequest,
   recordRequestMetrics,
+  recordApiAudit,
+  pruneApiAuditLogs,
   webhookManager,
   taskScheduler,
   channelRegistry,
 } from "./routes/shared.ts";
 import { safeJsonParse } from "../core/safe-utils.ts";
+import { securityConfig } from "../core/config-extension.ts";
+import { pruneDeadLetters } from "../core/event-bus.ts";
+import { pruneSecurityAuditLogs } from "../core/security-framework.ts";
 
 const PORT = appConfig.web.port;
 const WEB_DIST = join(process.cwd(), "web", "dist");
@@ -152,6 +157,9 @@ export function createApp(): Server {
       const durationMs = Date.now() - start;
       recordRequestMetrics(req.method || "GET", path, res.statusCode || 200, durationMs / 1000);
       logRequest(req, res, ctx, path, durationMs);
+      if (securityConfig.auditLogging.enabled && (path.startsWith("/api/") || path.startsWith("/webhooks/"))) {
+        recordApiAudit(req, res, ctx, path, durationMs);
+      }
     }
   });
   activeServer = server;
@@ -199,6 +207,12 @@ const isEntrypoint = process.argv[1]?.includes("server.ts") || import.meta.url.e
 
 if (isEntrypoint) {
   (async () => {
+    const validation = validateConfig();
+    if (!validation.valid) {
+      logger.error("Configuration validation failed", { errors: validation.errors });
+      throw new Error(`Invalid configuration:\n${validation.errors.map((e) => "  - " + e).join("\n")}`);
+    }
+
     await reconcileSkillRegistry();
     startRunnerIdleCleanup();
     startWorkerIdleCleanup();
@@ -252,6 +266,20 @@ if (isEntrypoint) {
         }
       },
       { id: "prune-token-usage", name: "Prune Old Token Usage", cron: "0 6 * * *", enabled: true }
+    );
+
+    taskScheduler.registerCronTask(
+      async () => {
+        const retentionDays = securityConfig.auditLogging.retentionDays ?? 30;
+        const retentionMs = retentionDays * 24 * 60 * 60 * 1000;
+        const dlDeleted = pruneDeadLetters(retentionMs);
+        const auditDeleted = pruneApiAuditLogs(retentionMs);
+        const securityDeleted = pruneSecurityAuditLogs(retentionMs);
+        if (dlDeleted > 0 || auditDeleted > 0 || securityDeleted > 0) {
+          logger.info("Pruned old logs", { dlDeleted, auditDeleted, securityDeleted });
+        }
+      },
+      { id: "prune-logs", name: "Prune Old Audit & Dead Letter Logs", cron: "0 3 * * *", enabled: true }
     );
 
     // Resume any worker tasks that were queued or running before restart

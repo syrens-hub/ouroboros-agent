@@ -87,6 +87,27 @@ describe("constitution-guard", () => {
     expect(result.success).toBe(true);
   });
 
+  it("denies package.json modification when new content is unparseable JSON", () => {
+    const result = evaluateConstitutionGuard("package.json", "write", "not valid json");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe("CONSTITUTION_VIOLATION");
+      expect(result.error.message).toContain("package.json");
+    }
+    expect(mockEmitEvent).toHaveBeenCalledTimes(1);
+    expect(mockEmitEvent.mock.calls[0][0].meta.rule).toBe("Rule 4");
+  });
+
+  it("allows deletion of core files inside sandbox or test dirs", () => {
+    const result = evaluateConstitutionGuard("core/sandbox/test-helper.ts", "delete");
+    expect(result.success).toBe(true);
+  });
+
+  // NOTE: Lines 45-47, 56-57, 66-67 in constitution-guard.ts (catch blocks in
+  // isUnderCore, isImmutablePath, isPackageJson) are unreachable from external tests.
+  // The exported functions call resolve() first, which doesn't throw on strings,
+  // and the helper functions only receive already-resolved string paths.
+
   it("isConstitutionallyProtected returns true for immutable paths", () => {
     expect(isConstitutionallyProtected("core/rule-engine.ts")).toBe(true);
     expect(isConstitutionallyProtected("core/config.ts")).toBe(true);

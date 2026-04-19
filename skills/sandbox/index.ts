@@ -5,49 +5,19 @@
  * Creates a safe execution bubble for child agents.
  */
 
-import { randomBytes } from "crypto";
 import { join, resolve, relative } from "path";
 import { mkdirSync, lstatSync, realpathSync } from "fs";
 import type {
-  TaskId,
   ToolCallContext,
   AgentLoopState,
-  BaseMessage,
 } from "../../types/index.ts";
+import type { SandboxContext } from "../../types/sandbox.ts";
 import type { Result } from "../../types/index.ts";
 import { ok, err } from "../../types/index.ts";
+import { generateTaskId, createChildAbortController } from "../../core/sandbox.ts";
 
-export interface SandboxContext {
-  readonly taskId: TaskId;
-  readonly parentTaskId?: TaskId;
-  readonly abortSignal: AbortSignal;
-  /** Isolated message history (clone of parent at fork time). */
-  readonly messages: BaseMessage[];
-  /** Sandboxed loop state (read-only mirrors). */
-  readonly loopStateSnapshot: Readonly<AgentLoopState>;
-  /** If true, the subagent cannot modify persistent state. */
-  readonly readOnly: boolean;
-  /** If true, permission prompts are suppressed (used for background agents). */
-  readonly quietMode: boolean;
-  /** Filesystem sandbox directory for this subagent. */
-  readonly sandboxDir: string;
-}
-
-export function generateTaskId(): TaskId {
-  return randomBytes(6).toString("hex") as TaskId;
-}
-
-export function createChildAbortController(
-  parent?: AbortController
-): AbortController {
-  const child = new AbortController();
-  if (parent) {
-    parent.signal.addEventListener("abort", () => {
-      child.abort("parent_aborted");
-    });
-  }
-  return child;
-}
+export type { SandboxContext } from "../../types/sandbox.ts";
+export { generateTaskId, createChildAbortController } from "../../core/sandbox.ts";
 
 export function createSandboxContext(
   parent: {

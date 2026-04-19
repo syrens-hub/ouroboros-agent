@@ -4,6 +4,7 @@ import {
   SecurityAuditor,
   ToolRateLimiter,
   createSecurityFramework,
+  pruneSecurityAuditLogs,
 } from "../../core/security-framework.ts";
 import { rmSync, existsSync } from "fs";
 import { join } from "path";
@@ -79,6 +80,20 @@ describe("SecurityAuditor", () => {
     const audits = auditor.getRecentAudits(undefined, 2);
     expect(audits.length).toBe(2);
   });
+
+  it("pruneOldLogs removes entries older than threshold", async () => {
+    auditor.logDecision("sess_1", "tool", {}, "allow", "");
+    await new Promise((r) => setTimeout(r, 10));
+    const deleted = auditor.pruneOldLogs(5);
+    expect(deleted).toBe(1);
+    expect(auditor.getRecentAudits(undefined, 10).length).toBe(0);
+  });
+
+  it("pruneOldLogs returns 0 when nothing is old enough", () => {
+    auditor.logDecision("sess_1", "tool", {}, "allow", "");
+    const deleted = auditor.pruneOldLogs(100000);
+    expect(deleted).toBe(0);
+  });
 });
 
 describe("ToolRateLimiter", () => {
@@ -134,5 +149,16 @@ describe("createSecurityFramework", () => {
     expect(fw.securityAuditor).toBeInstanceOf(SecurityAuditor);
     expect(fw.toolRateLimiter).toBeInstanceOf(ToolRateLimiter);
     fw.securityAuditor.close();
+  });
+});
+
+describe("pruneSecurityAuditLogs", () => {
+  it("prunes old logs and returns deleted count", () => {
+    const auditor = new SecurityAuditor();
+    auditor.logDecision("sess_1", "tool", {}, "allow", "");
+    auditor.close();
+
+    const deleted = pruneSecurityAuditLogs(-1);
+    expect(deleted).toBeGreaterThanOrEqual(1);
   });
 });

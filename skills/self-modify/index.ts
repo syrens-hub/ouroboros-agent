@@ -285,6 +285,15 @@ export function createBackup(versionId: string, files: string[], backupDir?: str
   }
 
   logger.info("Backup created", { versionId, fileCount: files.length, dir });
+  // Auto-prune old evolution backups after creating a new one
+  try {
+    const { pruned } = backupModule.pruneEvolutionBackups();
+    if (pruned > 0) {
+      logger.info("Auto-pruned evolution backups after create", { pruned });
+    }
+  } catch {
+    // Non-fatal: pruning failure should not block backup creation
+  }
   return dir;
 }
 
@@ -640,3 +649,6 @@ export const ruleEngineOverrideTool = buildTool({
     return { success: true, warning: "IMMUTABLE CORE WAS MODIFIED. RESTART REQUIRED." };
   },
 });
+
+// A/B test integration (re-exported for external use)
+export { createEvolutionABTest, checkAutoRollback } from "./ab-integration.ts";

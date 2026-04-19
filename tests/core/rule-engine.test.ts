@@ -81,6 +81,10 @@ describe("Rule Engine", () => {
     expect(rules).toContain(META_RULE_AXIOM);
   });
 
+  // NOTE: Lines 42-44 in rule-engine.ts (catch block in normalizePath) are unreachable
+  // from external tests because Node.js path.resolve() does not throw on valid strings,
+  // and the function is only called with string inputs from the public API.
+
   it("isImmutablePath rejects path-traversal equivalents", () => {
     expect(engine.isImmutablePath("core/rule-engine.ts")).toBe(true);
     expect(engine.isImmutablePath("core/../core/rule-engine.ts")).toBe(true);
@@ -98,5 +102,28 @@ describe("Rule Engine", () => {
     );
     if (res.success) throw new Error("Expected failure");
     expect(res.error.code).toBe("RULE_IMMUTABLE");
+  });
+
+  it("asks for rule_engine_override on immutable path", () => {
+    const res = engine.evaluateModification(
+      makeReq("rule_engine_override", "low", {
+        proposedChanges: { targetPath: "core/rule-engine.ts" },
+      })
+    );
+    if (!res.success) throw new Error("Expected success");
+    expect(res.data).toBe("ask");
+  });
+
+  // NOTE: Lines 141-142 in rule-engine.ts (return ok("ask") inside immutable path block
+  // for rule_engine_override type) are unreachable from external tests because
+  // rule_engine_override is listed in ALWAYS_HUMAN_CONFIRM_TYPES, so the function
+  // returns ok("ask") earlier at line 112 before reaching the path-based gating.
+
+  it("asks when rationale contains single-word forbidden pattern", () => {
+    const res = engine.evaluateModification(
+      makeReq("skill_create", "low", { rationale: "We should wipe everything." })
+    );
+    if (!res.success) throw new Error("Expected success");
+    expect(res.data).toBe("ask");
   });
 });
