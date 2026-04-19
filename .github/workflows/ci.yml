@@ -108,6 +108,14 @@ jobs:
           path: coverage/
 
       # 最终检查：如果测试步骤实际失败了，标记 job 为失败
+      - name: Show test output tail
+        if: always()
+        run: |
+          echo "=== Test output tail (Node 20) ==="
+          tail -n 50 test-output-node20.log || true
+          echo "=== Coverage output tail (Node 20) ==="
+          tail -n 50 coverage-output-node20.log || true
+
       - name: Assert tests passed
         run: |
           FAIL=0
@@ -228,6 +236,14 @@ jobs:
         with:
           name: coverage-report-node22
           path: coverage/
+
+      - name: Show test output tail
+        if: always()
+        run: |
+          echo "=== Test output tail (Node 22) ==="
+          tail -n 50 test-output-node22.log || true
+          echo "=== Coverage output tail (Node 22) ==="
+          tail -n 50 coverage-output-node22.log || true
 
       - name: Assert tests passed
         run: |
