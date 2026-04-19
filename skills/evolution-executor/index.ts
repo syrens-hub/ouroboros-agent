@@ -10,7 +10,7 @@ import type { DbAdapter } from "../../core/db-adapter.ts";
 import { eventBus } from "../../core/event-bus.ts";
 import { logger } from "../../core/logger.ts";
 import { safeJsonParse } from "../../core/safe-utils.ts";
-import { evolutionVersionManager } from "../evolution-version-manager/index.ts";
+import { evolutionVersionManager, initEvolutionVersionTables } from "../evolution-version-manager/index.ts";
 import { executeEvolution } from "../evolution-orchestrator/index.ts";
 import { changeFreezePeriod } from "../safety-controls/index.ts";
 
@@ -53,6 +53,7 @@ export function initExecutionTables(db: DbAdapter): void {
 
 function ensureInitialized(): void {
   const db = getDb();
+  initEvolutionVersionTables(db);
   initExecutionTables(db);
 }
 
@@ -77,8 +78,14 @@ export class ExecutionDaemon {
     this.running = true;
     ensureInitialized();
     logger.info("Evolution Execution Daemon started", { intervalMs: this.config.pollIntervalMs });
-    this.tick(); // immediate first run
-    this.timer = setInterval(() => this.tick(), this.config.pollIntervalMs);
+    this.tick().catch((e) => {
+      logger.error("Execution daemon initial tick error", { error: String(e) });
+    });
+    this.timer = setInterval(() => {
+      this.tick().catch((e) => {
+        logger.error("Execution daemon tick error", { error: String(e) });
+      });
+    }, this.config.pollIntervalMs);
   }
 
   stop(): void {

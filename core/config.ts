@@ -86,7 +86,7 @@ export const appConfig = {
     encryptKey: process.env.FEISHU_ENCRYPT_KEY || "",
     webhookPort: parseInt(process.env.FEISHU_WEBHOOK_PORT || "3000", 10),
     webhookPath: process.env.FEISHU_WEBHOOK_PATH || "/feishu/webhook",
-    autoStart: process.env.FEISHU_AUTO_START !== "false" && process.env.FEISHU_AUTO_START !== "0",
+    autoStart: process.env.FEISHU_AUTO_START === "true" || process.env.FEISHU_AUTO_START === "1",
   },
   log: {
     level: (process.env.LOG_LEVEL as "debug" | "info" | "warn" | "error") || "info",
