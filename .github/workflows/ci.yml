@@ -64,12 +64,11 @@ jobs:
             fi
           fi
 
-      # 方案 C: 先用无 coverage 模式运行测试，排除 coverage 插件导致崩溃的可能
       - name: Test (no coverage)
-        run: npm test -- --run 2>&1 | tee test-output-node20.log
-        continue-on-error: true
+        run: |
+          npm test -- --run 2>&1 | tee test-output-node20.log
+          echo "${PIPESTATUS[0]}" > test-exit-code-node20.txt
 
-      # 方案 A: 上传测试日志，即使崩溃也能获取输出
       - name: Upload test output
         uses: actions/upload-artifact@v4
         if: always()
@@ -78,8 +77,9 @@ jobs:
           path: test-output-node20.log
 
       - name: Test with coverage
-        run: npm run test:coverage 2>&1 | tee coverage-output-node20.log
-        continue-on-error: true
+        run: |
+          npm run test:coverage 2>&1 | tee coverage-output-node20.log
+          echo "${PIPESTATUS[0]}" > coverage-exit-code-node20.txt
 
       - name: Upload coverage output
         uses: actions/upload-artifact@v4
@@ -107,45 +107,34 @@ jobs:
           name: coverage-report-node20
           path: coverage/
 
-      # 最终检查：如果测试步骤实际失败了，标记 job 为失败
       - name: Show test output tail
         if: always()
         run: |
-          echo "=== Test output tail (Node 20) ===" >> $GITHUB_STEP_SUMMARY
-          tail -n 100 test-output-node20.log >> $GITHUB_STEP_SUMMARY || true
-          echo "=== Coverage output tail (Node 20) ===" >> $GITHUB_STEP_SUMMARY
-          tail -n 100 coverage-output-node20.log >> $GITHUB_STEP_SUMMARY || true
           echo "=== Test output tail (Node 20) ==="
           tail -n 50 test-output-node20.log || true
           echo "=== Coverage output tail (Node 20) ==="
           tail -n 50 coverage-output-node20.log || true
 
-      # - name: Assert tests passed
-      #   run: |
-      #     FAIL=0
-      #     if [ -f test-output-node20.log ]; then
-      #       if grep -oE '[0-9]+ failed' test-output-node20.log | grep -v '^0 failed'; then
-      #         echo "Tests failed in no-coverage mode"
-      #         FAIL=1
-      #       fi
-      #       if grep -q 'Tests crashed' test-output-node20.log; then
-      #         echo "Tests crashed in no-coverage mode"
-      #         FAIL=1
-      #       fi
-      #     fi
-      #     if [ -f coverage-output-node20.log ]; then
-      #       if grep -oE '[0-9]+ failed' coverage-output-node20.log | grep -v '^0 failed'; then
-      #         echo "Tests failed in coverage mode"
-      #         FAIL=1
-      #       fi
-      #       if grep -q 'Tests crashed' coverage-output-node20.log; then
-      #         echo "Tests crashed in coverage mode"
-      #         FAIL=1
-      #       fi
-      #     fi
-      #     if [ "$FAIL" = "1" ]; then
-      #       exit 1
-      #     fi
+      - name: Assert tests passed
+        run: |
+          FAIL=0
+          if [ -f test-exit-code-node20.txt ]; then
+            exit_code=$(cat test-exit-code-node20.txt)
+            if [ "$exit_code" != "0" ]; then
+              echo "Tests failed with exit code $exit_code"
+              FAIL=1
+            fi
+          fi
+          if [ -f coverage-exit-code-node20.txt ]; then
+            exit_code=$(cat coverage-exit-code-node20.txt)
+            if [ "$exit_code" != "0" ]; then
+              echo "Coverage tests failed with exit code $exit_code"
+              FAIL=1
+            fi
+          fi
+          if [ "$FAIL" = "1" ]; then
+            exit 1
+          fi
 
   test-node22:
     name: Test (Node 22)
@@ -201,8 +190,9 @@ jobs:
           fi
 
       - name: Test (no coverage)
-        run: npm test -- --run 2>&1 | tee test-output-node22.log
-        continue-on-error: true
+        run: |
+          npm test -- --run 2>&1 | tee test-output-node22.log
+          echo "${PIPESTATUS[0]}" > test-exit-code-node22.txt
 
       - name: Upload test output
         uses: actions/upload-artifact@v4
@@ -212,8 +202,9 @@ jobs:
           path: test-output-node22.log
 
       - name: Test with coverage
-        run: npm run test:coverage 2>&1 | tee coverage-output-node22.log
-        continue-on-error: true
+        run: |
+          npm run test:coverage 2>&1 | tee coverage-output-node22.log
+          echo "${PIPESTATUS[0]}" > coverage-exit-code-node22.txt
 
       - name: Upload coverage output
         uses: actions/upload-artifact@v4
@@ -244,38 +235,28 @@ jobs:
       - name: Show test output tail
         if: always()
         run: |
-          echo "=== Test output tail (Node 22) ===" >> $GITHUB_STEP_SUMMARY
-          tail -n 100 test-output-node22.log >> $GITHUB_STEP_SUMMARY || true
-          echo "=== Coverage output tail (Node 22) ===" >> $GITHUB_STEP_SUMMARY
-          tail -n 100 coverage-output-node22.log >> $GITHUB_STEP_SUMMARY || true
           echo "=== Test output tail (Node 22) ==="
           tail -n 50 test-output-node22.log || true
           echo "=== Coverage output tail (Node 22) ==="
           tail -n 50 coverage-output-node22.log || true
 
-      # - name: Assert tests passed
-      #   run: |
-      #     FAIL=0
-      #     if [ -f test-output-node22.log ]; then
-      #       if grep -oE '[0-9]+ failed' test-output-node22.log | grep -v '^0 failed'; then
-      #         echo "Tests failed in no-coverage mode"
-      #         FAIL=1
-      #       fi
-      #       if grep -q 'Tests crashed' test-output-node22.log; then
-      #         echo "Tests crashed in no-coverage mode"
-      #         FAIL=1
-      #       fi
-      #     fi
-      #     if [ -f coverage-output-node22.log ]; then
-      #       if grep -oE '[0-9]+ failed' coverage-output-node22.log | grep -v '^0 failed'; then
-      #         echo "Tests failed in coverage mode"
-      #         FAIL=1
-      #       fi
-      #       if grep -q 'Tests crashed' coverage-output-node22.log; then
-      #         echo "Tests crashed in coverage mode"
-      #         FAIL=1
-      #       fi
-      #     fi
-      #     if [ "$FAIL" = "1" ]; then
-      #       exit 1
-      #     fi
+      - name: Assert tests passed
+        run: |
+          FAIL=0
+          if [ -f test-exit-code-node22.txt ]; then
+            exit_code=$(cat test-exit-code-node22.txt)
+            if [ "$exit_code" != "0" ]; then
+              echo "Tests failed with exit code $exit_code"
+              FAIL=1
+            fi
+          fi
+          if [ -f coverage-exit-code-node22.txt ]; then
+            exit_code=$(cat coverage-exit-code-node22.txt)
+            if [ "$exit_code" != "0" ]; then
+              echo "Coverage tests failed with exit code $exit_code"
+              FAIL=1
+            fi
+          fi
+          if [ "$FAIL" = "1" ]; then
+            exit 1
+          fi
