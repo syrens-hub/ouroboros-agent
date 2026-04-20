@@ -56,12 +56,20 @@ export const ToolPermissionContextSchema = z.object({
 });
 export type ToolPermissionContext = z.infer<typeof ToolPermissionContextSchema>;
 
+export interface ToolCostProfile {
+  latency: "instant" | "fast" | "slow" | "variable";
+  cpuIntensity: "free" | "low" | "medium" | "high";
+  externalCost: "none" | "low" | "medium" | "high";
+  tokenEstimate?: number;
+}
+
 export interface Tool<Input, Output = unknown, Progress = unknown> {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: z.ZodType<Input>;
   readonly isReadOnly: boolean;
   readonly isConcurrencySafe: boolean | ((input: unknown) => boolean);
+  readonly costProfile?: ToolCostProfile;
   checkPermissions(input: Input, ctx: ToolPermissionContext): Result<ToolPermissionLevel>;
   call(input: Input, ctx: ToolCallContext<Progress>): Promise<Output>;
 }

@@ -135,6 +135,7 @@ export const webAgentTool = buildTool({
   }),
   isReadOnly: true,
   isConcurrencySafe: true,
+  costProfile: { latency: "slow", cpuIntensity: "medium", externalCost: "low" },
   async call(input) {
     const result = await fetchUrl(input.url);
 

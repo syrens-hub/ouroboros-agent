@@ -138,6 +138,7 @@ export const multiAgentOrchestratorTool = buildTool({
   }),
   isReadOnly: false,
   isConcurrencySafe: false,
+  costProfile: { latency: "variable", cpuIntensity: "medium", externalCost: "high", tokenEstimate: 4096 },
   async call({ task, roles }, _ctx) {
     // This is a simplified synchronous orchestrator that builds an in-memory pool
     // using a mock LLM caller (for tool-level invocation without real LLM config).

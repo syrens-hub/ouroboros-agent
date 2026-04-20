@@ -350,6 +350,7 @@ export const runCrewTaskTool = buildTool({
   }),
   isReadOnly: true,
   isConcurrencySafe: true,
+  costProfile: { latency: "variable", cpuIntensity: "medium", externalCost: "high", tokenEstimate: 4096 },
   async call({ task, roles, process }) {
     const tasks: CrewTask[] = roles.map((role, i) => ({
       id: `task_${i + 1}`,

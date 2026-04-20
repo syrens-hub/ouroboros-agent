@@ -386,6 +386,7 @@ export function createGenerateSkillTool(deps: {
     }),
     isReadOnly: false,
     isConcurrencySafe: false,
+    costProfile: { latency: "variable", cpuIntensity: "medium", externalCost: "high", tokenEstimate: 4096 },
     async call({ skill_name, description, problem_statement, example_usage, force }, _ctx) {
       const result = await generateSkillPackage(
         { skill_name, description, problem_statement, example_usage },

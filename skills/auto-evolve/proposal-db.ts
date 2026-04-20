@@ -8,6 +8,7 @@
 
 import { getDb } from "../../core/db-manager.ts";
 import type { DbAdapter } from "../../core/db-adapter.ts";
+export type { ProposalDraft } from "./analyzers.ts";
 
 export type ProposalCategory = "performance" | "reliability" | "resource" | "security" | "ux";
 export type ProposalStatus = "pending" | "approved" | "rejected" | "applied" | "failed" | "snoozed";

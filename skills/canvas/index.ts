@@ -136,6 +136,7 @@ export const canvas_draw = buildTool({
   }),
   isReadOnly: true,
   isConcurrencySafe: true,
+  costProfile: { latency: "fast", cpuIntensity: "medium", externalCost: "none" },
   checkPermissions: () => ok("allow"),
   async call({ width, height, commands }) {
     const workspace = new CanvasWorkspace({ width, height });
@@ -157,6 +158,7 @@ export const canvas_export = buildTool({
   }),
   isReadOnly: true,
   isConcurrencySafe: true,
+  costProfile: { latency: "fast", cpuIntensity: "low", externalCost: "none" },
   checkPermissions: () => ok("allow"),
   async call({ width, height }) {
     const workspace = new CanvasWorkspace({ width, height });

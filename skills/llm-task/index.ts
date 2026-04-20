@@ -26,6 +26,7 @@ export const llmTaskTool = buildTool({
   }),
   isReadOnly: true,
   isConcurrencySafe: true,
+  costProfile: { latency: "variable", cpuIntensity: "low", externalCost: "medium", tokenEstimate: 2048 },
   async call({ prompt, input, outputSchema, model, temperature }) {
     const cfg: LLMConfig = {
       provider: (process.env.LLM_PROVIDER as LLMConfig["provider"]) || "local",

@@ -28,6 +28,7 @@ export const agentLoopTool = buildTool({
   }),
   isReadOnly: false,
   isConcurrencySafe: false,
+  costProfile: { latency: "variable", cpuIntensity: "medium", externalCost: "high", tokenEstimate: 4096 },
   async call({ directive, allowedTools, readOnly }, _ctx) {
     return {
       success: true,

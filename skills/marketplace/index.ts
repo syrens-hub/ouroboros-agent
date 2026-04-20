@@ -141,6 +141,7 @@ export const installSkillTool = buildTool({
   }),
   isReadOnly: false,
   isConcurrencySafe: false,
+  costProfile: { latency: "slow", cpuIntensity: "medium", externalCost: "low" },
   async call({ source, branch, tag, subPath, force, allowDowngrade }) {
     ensureTmpDir();
     const gitRef = tag || branch;

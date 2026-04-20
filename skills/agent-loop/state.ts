@@ -3,7 +3,8 @@ import type { AgentLoopState } from "../../types/index.ts";
 export function createAgentLoopState(
   sessionId: string,
   skillPrompts: string[] = [],
-  mode: "orchestrator" | "worker" = "worker"
+  mode: "orchestrator" | "worker" = "worker",
+  overrideSystemPrompt?: string
 ): AgentLoopState {
   const orchestratorPrompt =
     "You are the Orchestrator. You do NOT execute tasks directly. " +
@@ -23,8 +24,9 @@ export function createAgentLoopState(
     "You may use tools. After complex successes, consider saving knowledge as a skill. " +
     "You may also propose improvements to your own agent loop via self_modify.";
 
+  const basePrompt = overrideSystemPrompt || (mode === "orchestrator" ? orchestratorPrompt : workerPrompt);
   const systemContent =
-    (mode === "orchestrator" ? orchestratorPrompt : workerPrompt) +
+    basePrompt +
     (skillPrompts.length > 0
       ? "\n\nLoaded skills:\n" + skillPrompts.map((s) => `- ${s}`).join("\n")
       : "");

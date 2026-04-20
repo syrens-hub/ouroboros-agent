@@ -49,6 +49,7 @@ export const readFileTool = buildTool({
   inputSchema: z.object({ path: z.string() }),
   isReadOnly: true,
   isConcurrencySafe: true,
+  costProfile: { latency: "fast", cpuIntensity: "free", externalCost: "none" },
   async call({ path }) {
     const safePath = resolveAndGuard(path);
     if (!existsSync(safePath)) return { content: null, exists: false };
@@ -63,6 +64,7 @@ export const writeFileTool = buildTool({
   inputSchema: z.object({ path: z.string(), content: z.string() }),
   isReadOnly: false,
   isConcurrencySafe: false,
+  costProfile: { latency: "fast", cpuIntensity: "low", externalCost: "none" },
   async call({ path, content }) {
     const safePath = resolveAndGuard(path);
     assertWritable(safePath);

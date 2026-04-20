@@ -112,6 +112,7 @@ export const run_sop_workflow = buildTool({
   name: "run_sop_workflow",
   description: "Compile and execute a Standard Operating Procedure workflow",
   inputSchema: RunSOPWorkflowInputSchema,
+  costProfile: { latency: "variable", cpuIntensity: "medium", externalCost: "high", tokenEstimate: 4096 },
   call: async ({ definition, initialState }) => {
     const workflow = new SOPWorkflow(definition);
     const compiled = workflow.compile();

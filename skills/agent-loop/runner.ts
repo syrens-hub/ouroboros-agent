@@ -87,6 +87,7 @@ export interface AgentLoopRunner {
   pause(): void;
   resume(): void;
   setAbortSignal(signal: AbortSignal): void;
+  injectSystemPrompt(prompt: string): void;
   exportState(): LoopStateSnapshot;
   importState(snapshot: LoopStateSnapshot): void;
 }
@@ -122,8 +123,9 @@ export function createAgentLoopRunner(opts: {
   enableContextCompression?: boolean;
   mode?: "orchestrator" | "worker";
   loopConfig?: Partial<LoopConfig>;
+  overrideSystemPrompt?: string;
 }): AgentLoopRunner {
-  const state = createAgentLoopState(opts.sessionId, opts.skillPrompts, opts.mode);
+  const state = createAgentLoopState(opts.sessionId, opts.skillPrompts, opts.mode, opts.overrideSystemPrompt);
   const toolPool = createToolPool();
   for (const t of opts.tools) toolPool.register(t);
   const llmCaller = opts.llmCaller || (opts.llm ? createRealLLMCaller(opts.llm) : createMockLLMCaller());
@@ -195,6 +197,13 @@ export function createAgentLoopRunner(opts: {
     },
     setAbortSignal(signal: AbortSignal) {
       externalAbortSignal = signal;
+    },
+    injectSystemPrompt(prompt: string) {
+      if (state.messages.length > 0 && state.messages[0]!.role === "system") {
+        state.messages[0]!.content = prompt;
+      } else {
+        state.messages.unshift({ role: "system", content: prompt });
+      }
     },
     exportState(): LoopStateSnapshot {
       return {

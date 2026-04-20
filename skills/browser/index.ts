@@ -307,6 +307,7 @@ export function createBrowserTools(
       inputSchema: z.object({ headless: z.boolean().optional() }),
       isReadOnly: false,
       isConcurrencySafe: false,
+      costProfile: { latency: "slow", cpuIntensity: "medium", externalCost: "low" },
       checkPermissions: () => ok("allow"),
       async call({ headless }) {
         if (headless !== undefined) {
@@ -322,6 +323,7 @@ export function createBrowserTools(
       inputSchema: z.object({}),
       isReadOnly: false,
       isConcurrencySafe: false,
+      costProfile: { latency: "slow", cpuIntensity: "medium", externalCost: "low" },
       checkPermissions: () => ok("allow"),
       async call() {
         await controller.close();
@@ -334,6 +336,7 @@ export function createBrowserTools(
       inputSchema: z.object({ pageId: z.string(), url: z.string() }),
       isReadOnly: false,
       isConcurrencySafe: false,
+      costProfile: { latency: "slow", cpuIntensity: "medium", externalCost: "low" },
       checkPermissions: () => ok("allow"),
       async call({ pageId, url }) {
         return controller.navigate(pageId, url);
@@ -345,6 +348,7 @@ export function createBrowserTools(
       inputSchema: z.object({ pageId: z.string(), selector: z.string() }),
       isReadOnly: false,
       isConcurrencySafe: false,
+      costProfile: { latency: "slow", cpuIntensity: "medium", externalCost: "low" },
       checkPermissions: () => ok("allow"),
       async call({ pageId, selector }) {
         await controller.click(pageId, selector);
@@ -361,6 +365,7 @@ export function createBrowserTools(
       }),
       isReadOnly: false,
       isConcurrencySafe: false,
+      costProfile: { latency: "slow", cpuIntensity: "medium", externalCost: "low" },
       checkPermissions: () => ok("allow"),
       async call({ pageId, selector, text }) {
         await controller.fill(pageId, selector, text);
@@ -376,6 +381,7 @@ export function createBrowserTools(
       }),
       isReadOnly: true,
       isConcurrencySafe: false,
+      costProfile: { latency: "slow", cpuIntensity: "medium", externalCost: "low" },
       checkPermissions: () => ok("allow"),
       async call({ pageId, fullPage }) {
         const path = await controller.screenshot(pageId, { fullPage });
@@ -392,6 +398,7 @@ export function createBrowserTools(
       }),
       isReadOnly: true,
       isConcurrencySafe: false,
+      costProfile: { latency: "slow", cpuIntensity: "medium", externalCost: "low" },
       checkPermissions: () => ok("allow"),
       async call({ pageId, fullPage }) {
         return controller.screenshotBase64(pageId, { fullPage });
@@ -404,6 +411,7 @@ export function createBrowserTools(
       inputSchema: z.object({ pageId: z.string() }),
       isReadOnly: true,
       isConcurrencySafe: true,
+      costProfile: { latency: "slow", cpuIntensity: "medium", externalCost: "low" },
       checkPermissions: () => ok("allow"),
       async call({ pageId }) {
         const elements = await controller.evaluate<
@@ -447,6 +455,7 @@ export function createBrowserTools(
       inputSchema: z.object({ pageId: z.string() }),
       isReadOnly: true,
       isConcurrencySafe: true,
+      costProfile: { latency: "slow", cpuIntensity: "medium", externalCost: "low" },
       checkPermissions: () => ok("allow"),
       async call({ pageId }) {
         const text = await controller.evaluate<string>(
@@ -467,6 +476,7 @@ export function createBrowserTools(
       }),
       isReadOnly: false,
       isConcurrencySafe: false,
+      costProfile: { latency: "slow", cpuIntensity: "medium", externalCost: "low" },
       checkPermissions: () => ok("allow"),
       async call({ goal, startUrl, maxSteps = 10 }, ctx) {
         if (!llmCfg || !llmCfg.apiKey) {

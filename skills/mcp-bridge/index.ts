@@ -221,6 +221,7 @@ export const mcpBridgeTool = buildTool({
   }),
   isReadOnly: false,
   isConcurrencySafe: false,
+  costProfile: { latency: "variable", cpuIntensity: "low", externalCost: "medium" },
   async call({ name, command, args, env }) {
     const config: MCPServerConfig = { name, command, args, env };
     const tools = await discoverMCPTools(config);

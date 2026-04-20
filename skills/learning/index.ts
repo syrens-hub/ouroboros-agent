@@ -339,6 +339,7 @@ export const compressTrajectoryTool = buildTool({
   }),
   isReadOnly: true,
   isConcurrencySafe: true,
+  costProfile: { latency: "fast", cpuIntensity: "low", externalCost: "none" },
   async call({ entries, targetTokens }) {
     const compressor = createTrajectoryCompressor();
     const result = await compressor.compress(entries as TrajectoryEntry[], targetTokens ?? 4000);
@@ -353,6 +354,7 @@ export const discoverSkillsTool = buildTool({
   inputSchema: z.object({}),
   isReadOnly: true,
   isConcurrencySafe: true,
+  costProfile: { latency: "fast", cpuIntensity: "low", externalCost: "none" },
   async call() {
     return discoverSkills().map((s) => ({
       name: s.name,
@@ -372,6 +374,7 @@ export const writeSkillTool = buildTool({
   }),
   isReadOnly: false,
   isConcurrencySafe: false,
+  costProfile: { latency: "fast", cpuIntensity: "low", externalCost: "none" },
   async call({ name, markdown }) {
     const fm = parseSkillFrontmatter(markdown);
     if (!fm.success) throw new Error(`Invalid skill frontmatter: ${fm.error.message}`);
@@ -389,6 +392,7 @@ export const readSkillTool = buildTool({
   inputSchema: z.object({ name: z.string() }),
   isReadOnly: true,
   isConcurrencySafe: true,
+  costProfile: { latency: "fast", cpuIntensity: "low", externalCost: "none" },
   async call({ name }) {
     const path = join(SKILL_DIR, name, "SKILL.md");
     if (!existsSync(path)) return { content: null };
@@ -404,6 +408,7 @@ export const listSkillVersionsTool = buildTool({
   inputSchema: z.object({ skill_name: z.string() }),
   isReadOnly: true,
   isConcurrencySafe: true,
+  costProfile: { latency: "instant", cpuIntensity: "free", externalCost: "none" },
   async call({ skill_name }) {
     return { success: true, versions: listSkillVersions(skill_name) };
   },
@@ -415,6 +420,7 @@ export const restoreSkillVersionTool = buildTool({
   inputSchema: z.object({ skill_name: z.string(), version_id: z.string() }),
   isReadOnly: false,
   isConcurrencySafe: false,
+  costProfile: { latency: "fast", cpuIntensity: "low", externalCost: "none" },
   async call({ skill_name, version_id }) {
     const skillDir = join(SKILL_DIR, skill_name);
     const result = restoreSkillVersion(skill_name, version_id, skillDir);
@@ -430,6 +436,7 @@ export const pruneSkillVersionsTool = buildTool({
   inputSchema: z.object({ skill_name: z.string(), keep_count: z.number().default(20) }),
   isReadOnly: false,
   isConcurrencySafe: false,
+  costProfile: { latency: "fast", cpuIntensity: "low", externalCost: "none" },
   async call({ skill_name, keep_count }) {
     const { deleted } = pruneSkillVersions(skill_name, keep_count ?? 20);
     return { success: true, deleted };

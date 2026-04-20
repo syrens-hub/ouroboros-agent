@@ -482,6 +482,7 @@ export const selfModifyTool = buildTool({
   }),
   isReadOnly: false,
   isConcurrencySafe: false,
+  costProfile: { latency: "slow", cpuIntensity: "medium", externalCost: "none" },
   checkPermissions(input, _ctx) {
     const req: ModificationRequest = {
       type: input.type,
@@ -613,6 +614,7 @@ export const ruleEngineOverrideTool = buildTool({
   }),
   isReadOnly: false,
   isConcurrencySafe: false,
+  costProfile: { latency: "fast", cpuIntensity: "low", externalCost: "none" },
   checkPermissions() {
     return ok("ask");
   },

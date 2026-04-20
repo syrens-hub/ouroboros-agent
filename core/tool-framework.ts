@@ -12,9 +12,10 @@ import type {
   ToolPermissionContext,
   ToolCallContext,
   ToolPermissionLevel,
+  ToolCostProfile,
 } from "../types/index.ts";
 
-export type { Tool } from "../types/index.ts";
+export type { Tool, ToolCostProfile } from "../types/index.ts";
 import { ok, err } from "../types/index.ts";
 import { hookRegistry } from "./hook-system.ts";
 import { classifyToolError } from "./errors.ts";
@@ -40,6 +41,9 @@ export interface ToolBuildOptions<Input, Output, Progress> {
     ctx: ToolPermissionContext
   ) => Result<ToolPermissionLevel>;
 
+  /** Cost profile for scheduling and budget decisions. */
+  costProfile?: ToolCostProfile;
+
   /** The actual implementation. */
   call: (input: Input, ctx: ToolCallContext<Progress>) => Promise<Output>;
 }
@@ -57,6 +61,7 @@ export function buildTool<Input, Output = unknown, Progress = unknown>(
       ? (concurrencySafe as (input: unknown) => boolean)
       : () => concurrencySafe,
     checkPermissions: opts.checkPermissions ?? (() => ok("allow")),
+    costProfile: opts.costProfile,
     call: opts.call,
   };
 }

@@ -227,6 +227,7 @@ export const runCodeTool = buildTool({
   }),
   isReadOnly: true,
   isConcurrencySafe: true,
+  costProfile: { latency: "slow", cpuIntensity: "high", externalCost: "none" },
   async call({ language, code, stdin, timeout_ms, memory_mb }) {
     return runner.run(language, code, {
       stdin,

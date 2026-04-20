@@ -9,6 +9,7 @@
 
 import type { CheckupReport, Finding, Recommendation } from "../telemetry-v2/auto-check.ts";
 import type { ProposalCategory } from "./proposal-db.ts";
+import type { SchedulingMetrics, PoolMetricsSnapshot } from "../orchestrator/metrics.ts";
 
 export interface ProposalDraft {
   category: ProposalCategory;
@@ -254,4 +255,134 @@ function deduplicateProposals(drafts: ProposalDraft[]): ProposalDraft[] {
     seen.add(key);
     return true;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling metrics analyzer
+// ---------------------------------------------------------------------------
+
+export function analyzeSchedulingMetrics(metrics: SchedulingMetrics): ProposalDraft[] {
+  const drafts: ProposalDraft[] = [];
+
+  for (const pool of metrics.pools) {
+    drafts.push(...analyzePoolMetrics(pool));
+  }
+
+  // Overall success rate check
+  if (metrics.overallSuccessRate < 0.85) {
+    drafts.push({
+      category: "reliability",
+      severity: "warning",
+      title: "Overall worker success rate below 85%",
+      description: `Current overall success rate is ${(metrics.overallSuccessRate * 100).toFixed(1)}%. Workers are failing at an elevated rate.`,
+      rootCause: "Tools may have brittle error handling, timeouts, or external API instability.",
+      suggestedFix: `
+1. Inspect error logs for top failing tools
+2. Add circuit-breaker retries for external APIs
+3. Review timeout configurations
+4. Consider model fallback for LLM tools
+`.trim(),
+      expectedImpact: "Restore success rate above 95%.",
+      riskLevel: "medium",
+      autoApplicable: false,
+      relatedMetric: "scheduling.overallSuccessRate",
+      currentValue: metrics.overallSuccessRate,
+      threshold: 0.85,
+    });
+  }
+
+  return deduplicateProposals(drafts);
+}
+
+function analyzePoolMetrics(pool: PoolMetricsSnapshot): ProposalDraft[] {
+  const drafts: ProposalDraft[] = [];
+
+  // Queue latency check
+  if (pool.avgQueuedMs > 5000) {
+    drafts.push({
+      category: "performance",
+      severity: pool.avgQueuedMs > 15000 ? "critical" : "warning",
+      title: `Increase ${pool.pool} pool concurrency limit`,
+      description: `${pool.pool} pool average queue time is ${pool.avgQueuedMs}ms. Tasks are waiting too long.`,
+      rootCause: "Pool concurrency limit is too low for current workload.",
+      suggestedFix: `Increase ${pool.pool} pool maxConcurrentWorkers by 1-2. Current throughput: ${pool.throughputPerMinute}/min.`,
+      expectedImpact: `Reduce queue latency below 1s.`,
+      riskLevel: "low",
+      autoApplicable: true,
+      relatedMetric: `scheduling.${pool.pool}.avgQueuedMs`,
+      currentValue: pool.avgQueuedMs,
+      threshold: 5000,
+    });
+  }
+
+  // Execution duration check
+  if (pool.avgDurationMs > 30000) {
+    drafts.push({
+      category: "performance",
+      severity: "warning",
+      title: `Optimize ${pool.pool} pool task execution time`,
+      description: `${pool.pool} pool average execution time is ${pool.avgDurationMs}ms. Tasks are running slower than expected.`,
+      rootCause: "Tasks may be too large, or underlying tools (especially LLM) are slow.",
+      suggestedFix: `
+1. Break large tasks into smaller subtasks
+2. Switch to faster model for LLM-bound tasks
+3. Add caching for repeated computations
+4. Review tool timeout settings
+`.trim(),
+      expectedImpact: `Reduce average execution time below 15s.`,
+      riskLevel: "medium",
+      autoApplicable: false,
+      relatedMetric: `scheduling.${pool.pool}.avgDurationMs`,
+      currentValue: pool.avgDurationMs,
+      threshold: 30000,
+    });
+  }
+
+  // Pool success rate check
+  const poolSuccessRate = pool.totalTasks > 0 ? pool.successCount / pool.totalTasks : 1;
+  if (pool.totalTasks > 5 && poolSuccessRate < 0.9) {
+    drafts.push({
+      category: "reliability",
+      severity: poolSuccessRate < 0.7 ? "critical" : "warning",
+      title: `${pool.pool} pool success rate degraded`,
+      description: `${pool.pool} pool success rate is ${(poolSuccessRate * 100).toFixed(1)}% (${pool.successCount}/${pool.totalTasks}).`,
+      rootCause: "Specific tools in this pool may be failing repeatedly.",
+      suggestedFix: `
+1. Identify failing agents/tools in ${pool.pool} pool
+2. Add retries with exponential backoff
+3. Fallback to simpler tool variants
+4. Reduce concurrency to avoid rate limits
+`.trim(),
+      expectedImpact: "Restore pool success rate above 95%.",
+      riskLevel: "medium",
+      autoApplicable: false,
+      relatedMetric: `scheduling.${pool.pool}.successRate`,
+      currentValue: poolSuccessRate,
+      threshold: 0.9,
+    });
+  }
+
+  // Fallback pool saturation check
+  if (pool.pool === "fallback" && pool.totalTasks > 10) {
+    drafts.push({
+      category: "performance",
+      severity: "info",
+      title: "Improve task pool routing to reduce fallback usage",
+      description: `${pool.totalTasks} tasks routed to fallback pool because no strong keyword match was found.`,
+      rootCause: "Task descriptions lack recognizable keywords for pool routing.",
+      suggestedFix: `
+1. Expand POOL_KEYWORDS in scheduler.ts
+2. Add common task patterns from telemetry
+3. Consider LLM-based pool routing for ambiguous tasks
+`.trim(),
+      expectedImpact: "Reduce fallback pool usage by 30-50%.",
+      riskLevel: "low",
+      autoApplicable: false,
+      relatedMetric: "scheduling.fallback.totalTasks",
+      currentValue: pool.totalTasks,
+      threshold: 10,
+    });
+  }
+
+  return drafts;
 }

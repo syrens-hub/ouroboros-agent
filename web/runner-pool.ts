@@ -27,7 +27,7 @@ import { installSkillTool } from "../skills/marketplace/index.ts";
 import { mcpBridgeTool } from "../skills/mcp-bridge/index.ts";
 import { llmTaskTool } from "../skills/llm-task/index.ts";
 import { multiAgentOrchestratorTool } from "../skills/multi-agent/index.ts";
-import { createDelegateTaskTool } from "../skills/orchestrator/index.ts";
+import { createDelegateTaskTool, createDelegateDagTool } from "../skills/orchestrator/index.ts";
 import { runCrewTaskTool } from "../skills/crewai/index.ts";
 import { run_sop_workflow } from "../skills/sop/index.ts";
 import { webAgentTool } from "../skills/web-agent/index.ts";
@@ -101,6 +101,15 @@ globalPool.register(llmTaskTool);
 globalPool.register(createDelegateTaskTool({
   getGlobalTools: () => globalPool.all(),
   getLLMConfig: () => llmCfg,
+}));
+globalPool.register(createDelegateDagTool({
+  getGlobalTools: () => globalPool.all(),
+  getLLMConfig: () => llmCfg,
+  runWorker: async (parentSessionId, workerSessionId, taskDescription, tools, llmCfg, opts) => {
+    // Import at runtime to avoid circular dependency
+    const { runWorkerAgent } = await import("../skills/orchestrator/index.ts");
+    return runWorkerAgent(parentSessionId, workerSessionId, taskDescription, tools, llmCfg, opts);
+  },
 }));
 globalPool.register(createGenerateSkillTool({
   getLLMConfig: () => llmCfg,
