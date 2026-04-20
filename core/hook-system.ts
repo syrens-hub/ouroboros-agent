@@ -116,18 +116,15 @@ export class HookRegistry {
 
   registerBuiltins(): void {
     // Built-in audit-log hook
-    try {
-      // Dynamic import to avoid circular deps
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const auditModule = require("./hooks/audit-log.ts");
-      const handler = auditModule?.handle || auditModule?.default;
+    import("./hooks/audit-log.ts").then((auditModule) => {
+      const handler = auditModule?.handle;
       if (typeof handler === "function") {
         this.register("agent:turnEnd", handler);
         this.loadedHooks.push({ name: "audit-log", events: ["agent:turnEnd"], path: "(builtin)" });
       }
-    } catch (e) {
+    }).catch((e) => {
       logger.warn("Could not load built-in audit-log hook", { error: String(e) });
-    }
+    });
   }
 
   discoverAndLoad(customDir?: string): void {
