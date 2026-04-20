@@ -42,6 +42,9 @@ import { handleMisc } from "./handlers/misc.ts";
 import { handleOpenApi } from "./handlers/openapi.ts";
 import { handleEvolution } from "./handlers/evolution.ts";
 import { handleMonitoring } from "./handlers/monitoring.ts";
+import { handleBridges } from "./handlers/bridges.ts";
+import { handleResilience } from "./handlers/resilience.ts";
+import { handlePermissions } from "./handlers/permissions.ts";
 
 export async function handleApi(req: IncomingMessage, res: ServerResponse, path: string, ctx: ReqContext) {
   const method = req.method || "GET";
@@ -110,6 +113,9 @@ export async function handleApi(req: IncomingMessage, res: ServerResponse, path:
   if (await handleOpenApi(req, res, method, path, ctx)) return;
   if (await handleEvolution(req, res, method, path, ctx)) return;
   if (await handleMonitoring(req, res, method, path, ctx)) return;
+  if (await handleBridges(req, res, method, path, ctx)) return;
+  if (await handleResilience(req, res, method, path, ctx)) return;
+  if (await handlePermissions(req, res, method, path, ctx)) return;
   if (await handleMisc(req, res, method, path, ctx)) return;
 
   notFound(res, ctx);

@@ -64,6 +64,24 @@ export function recordRequestMetrics(method: string, path: string, statusCode: n
 
 export async function getPrometheusMetrics(taskScheduler?: TaskScheduler): Promise<string> {
   const lines: string[] = [];
+
+  // ---------------------------------------------------------------------------
+  // Telemetry v2 metrics (Agent self-observation)
+  // ---------------------------------------------------------------------------
+  try {
+    const { exportPrometheus } = await import("../../../skills/telemetry-v2/index.ts");
+    const v2Metrics = exportPrometheus();
+    if (v2Metrics.trim().length > 0) {
+      lines.push("# Telemetry v2 — Agent Self-Observation");
+      lines.push(v2Metrics.trim());
+    }
+  } catch {
+    // telemetry-v2 may not be available in all builds
+  }
+
+  // ---------------------------------------------------------------------------
+  // Legacy metrics
+  // ---------------------------------------------------------------------------
   lines.push("# HELP http_requests_total Total HTTP requests");
   lines.push("# TYPE http_requests_total counter");
   for (const [key, value] of requestCounter) {
@@ -170,6 +188,12 @@ export async function getPrometheusMetrics(taskScheduler?: TaskScheduler): Promi
   }
 
   return lines.join("\n") + "\n";
+}
+
+/** Merge telemetry-v2 metrics into Prometheus output */
+export async function getTelemetryV2Metrics(): Promise<string> {
+  const { exportPrometheus } = await import("../../../skills/telemetry-v2/index.ts");
+  return exportPrometheus();
 }
 
 export function logRequest(req: IncomingMessage, res: ServerResponse, ctx: ReqContext, path: string, durationMs: number) {

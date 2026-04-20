@@ -29,6 +29,33 @@ export {
   clearSearchStats,
 } from "./search-analytics.ts";
 
+// Knowledge Graph v1.1
+export {
+  addNode,
+  addEdge,
+  getNode,
+  getEdge,
+  removeNode,
+  removeEdge,
+  searchNodes,
+  listNodes,
+  queryNeighbors,
+  findPaths,
+  mergeNodes,
+  visualizeDOT,
+  getGraphStats,
+  findDuplicateNodes,
+  addEntity,
+  getGraphQualityMetrics,
+  type KGNode,
+  type KGEdge,
+  type NodeType,
+  type RelType,
+  type NeighborResult,
+  type PathResult,
+} from "./kg-api.ts";
+export { initKGTables } from "./kg-engine.ts";
+
 /**
  * Initialize Engraph-specific SQLite tables.
  */

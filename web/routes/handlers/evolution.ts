@@ -14,6 +14,16 @@ import {
 import { evolutionVersionManager } from "../../../skills/evolution-version-manager/index.ts";
 import { approvalGenerator } from "../../../skills/approval/index.ts";
 import { formatPrometheusMetrics, getEvolutionMetricsSnapshot } from "../../../skills/evolution-observability/index.ts";
+import {
+  runEvolutionCycle,
+  listProposals,
+  getProposal,
+  approveProposal,
+  rejectProposal,
+  snoozeProposal,
+  applyProposal,
+  getProposalStats,
+} from "../../../skills/auto-evolve/index.ts";
 
 const ApproveSchema = z.object({
   approvalId: z.string(),
@@ -115,6 +125,75 @@ export async function handleEvolution(
     const body = formatPrometheusMetrics();
     res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "X-Request-ID": ctx.requestId });
     res.end(body);
+    return true;
+  }
+
+  // ================================================================
+  // Auto-Evolve v1.1 API
+  // ================================================================
+
+  if (path === "/api/evolution/auto-check" && method === "POST") {
+    const { checkup, proposals } = runEvolutionCycle("manual");
+    json(res, 200, { success: true, data: { checkupId: checkup.id, proposalsGenerated: proposals.length, proposals: proposals.map((p) => ({ id: p.id, title: p.title, category: p.category, riskLevel: p.riskLevel, autoApplicable: p.autoApplicable })) } }, ctx);
+    return true;
+  }
+
+  if (path === "/api/evolution/proposals" && method === "GET") {
+    const q = new URL(req.url || "", "http://localhost");
+    const filter = {
+      status: q.searchParams.get("status") as import("../../../skills/auto-evolve/proposal-db.ts").ProposalStatus | undefined,
+      category: q.searchParams.get("category") as import("../../../skills/auto-evolve/proposal-db.ts").ProposalCategory | undefined,
+      limit: q.searchParams.has("limit") ? parseInt(q.searchParams.get("limit")!, 10) : 50,
+    };
+    const proposals = listProposals(filter);
+    json(res, 200, { success: true, data: proposals }, ctx);
+    return true;
+  }
+
+  if (path === "/api/evolution/proposals/stats" && method === "GET") {
+    const stats = getProposalStats();
+    json(res, 200, { success: true, data: stats }, ctx);
+    return true;
+  }
+
+  const proposalDetailMatch = path.match(/^\/api\/evolution\/proposals\/([^/]+)$/);
+  if (proposalDetailMatch && method === "GET") {
+    const proposal = getProposal(proposalDetailMatch[1]);
+    if (!proposal) {
+      json(res, 404, { success: false, error: { message: "Proposal not found" } }, ctx);
+      return true;
+    }
+    json(res, 200, { success: true, data: proposal }, ctx);
+    return true;
+  }
+
+  if (proposalDetailMatch && method === "POST") {
+    const q = new URL(req.url || "", "http://localhost");
+    const action = q.searchParams.get("action");
+    const id = proposalDetailMatch[1];
+
+    if (action === "approve") {
+      const result = approveProposal(id);
+      json(res, result.success ? 200 : 400, { success: result.success, data: result.proposal, error: result.error ? { message: result.error } : undefined }, ctx);
+      return true;
+    }
+    if (action === "reject") {
+      const result = rejectProposal(id);
+      json(res, result.success ? 200 : 400, { success: result.success, data: result.proposal, error: result.error ? { message: result.error } : undefined }, ctx);
+      return true;
+    }
+    if (action === "snooze") {
+      const result = snoozeProposal(id);
+      json(res, result.success ? 200 : 400, { success: result.success, data: result.proposal, error: result.error ? { message: result.error } : undefined }, ctx);
+      return true;
+    }
+    if (action === "apply") {
+      const result = await applyProposal(id);
+      json(res, result.success ? 200 : 400, { success: result.success, data: result }, ctx);
+      return true;
+    }
+
+    json(res, 400, { success: false, error: { message: "Unknown action. Use ?action=approve|reject|snooze|apply" } }, ctx);
     return true;
   }
 

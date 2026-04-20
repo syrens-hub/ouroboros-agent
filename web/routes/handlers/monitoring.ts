@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { json, ReqContext } from "../shared.ts";
 import { getMonitoringSnapshot } from "../../../skills/monitoring-dashboard/index.ts";
+import { buildRuntimeSummary, runAutoCheck, exportPrometheus } from "../../../skills/telemetry-v2/index.ts";
 
 export async function handleMonitoring(
   req: IncomingMessage,
@@ -42,6 +43,28 @@ export async function handleMonitoring(
   if (path === "/api/monitoring/test-runs" && method === "GET") {
     const { getTestRunStatus } = await import("../../../skills/monitoring-dashboard/index.ts");
     json(res, 200, { success: true, data: getTestRunStatus() }, ctx);
+    return true;
+  }
+
+  // ================================================================
+  // Telemetry v2 — Runtime Dashboard
+  // ================================================================
+  if (path === "/api/admin/runtime" && method === "GET") {
+    const summary = buildRuntimeSummary();
+    json(res, 200, { success: true, data: summary }, ctx);
+    return true;
+  }
+
+  if (path === "/api/admin/auto-check" && method === "GET") {
+    const report = runAutoCheck("manual");
+    json(res, 200, { success: true, data: report }, ctx);
+    return true;
+  }
+
+  if (path === "/api/admin/metrics" && method === "GET") {
+    const metricsText = exportPrometheus();
+    res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4" });
+    res.end(metricsText);
     return true;
   }
 

@@ -31,6 +31,10 @@ import { feishuPlugin, FEISHU_API_BASE, getTenantAccessToken } from "../extensio
 import { attachWebSocket } from "./ws-server.ts";
 import { captureException } from "../core/sentry.ts";
 import { initOtel } from "../skills/telemetry/otel.ts";
+import { initTelemetryV2 } from "../skills/telemetry-v2/index.ts";
+import { scheduleEvolutionCycle } from "../skills/auto-evolve/index.ts";
+import { initResilienceV2 } from "../core/resilience-v2.ts";
+import { initPermissionEngineV2 } from "../core/permission-engine-v2.ts";
 import { consolidateMemoryLayers } from "../core/memory-consolidation.ts";
 import type { ContentBlock } from "../types/index.ts";
 import { pruneDeletedSessions } from "../core/session-db.ts";
@@ -61,6 +65,7 @@ import {
   taskScheduler,
   channelRegistry,
 } from "./routes/shared.ts";
+import { recordHttpRequest as recordHttpRequestV2 } from "../skills/telemetry-v2/index.ts";
 import { safeJsonParse } from "../core/safe-utils.ts";
 import { securityConfig } from "../core/config-extension.ts";
 import { pruneDeadLetters } from "../core/event-bus.ts";
@@ -77,6 +82,10 @@ const WEB_DIST = join(process.cwd(), "web", "dist");
 
 // Initialize OpenTelemetry early
 initOtel();
+initTelemetryV2();
+initResilienceV2();
+initPermissionEngineV2(process.cwd());
+scheduleEvolutionCycle();
 
 // =============================================================================
 // Main Server
@@ -174,6 +183,7 @@ export function createApp(): Server {
     } finally {
       const durationMs = Date.now() - start;
       recordRequestMetrics(req.method || "GET", path, res.statusCode || 200, durationMs / 1000);
+      recordHttpRequestV2(req.method || "GET", path, res.statusCode || 200, durationMs);
       logRequest(req, res, ctx, path, durationMs);
       if (securityConfig.auditLogging.enabled && (path.startsWith("/api/") || path.startsWith("/webhooks/"))) {
         recordApiAudit(req, res, ctx, path, durationMs);
