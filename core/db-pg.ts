@@ -46,7 +46,20 @@ class PgStatement implements DbStatement {
     const converted = convertPlaceholders(this._sql);
     const result = await this._query(converted, params);
     const changes = (result as { rowCount?: number }).rowCount ?? 0;
-    const lastInsertRowid = (result as { rows: { id?: number | bigint }[] }).rows?.[0]?.id ?? 0;
+    let lastInsertRowid = (result as { rows: { id?: number | bigint }[] }).rows?.[0]?.id ?? 0;
+    // Fallback: PostgreSQL does not return lastInsertRowid by default;
+    // use lastval() when RETURNING id was not present in the INSERT.
+    if (lastInsertRowid === 0 && changes > 0 && /^\s*INSERT/i.test(this._sql)) {
+      try {
+        const lv = await this._query("SELECT lastval() as id", []);
+        const lvRows = (lv as { rows: { id?: number | bigint }[] }).rows;
+        if (lvRows && lvRows.length > 0) {
+          lastInsertRowid = lvRows[0].id ?? 0;
+        }
+      } catch {
+        // lastval() fails when no sequence was used; ignore
+      }
+    }
     return { changes, lastInsertRowid };
   }
 

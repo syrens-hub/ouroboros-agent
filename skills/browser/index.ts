@@ -286,11 +286,8 @@ export function isAllowedUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     if (parsed.protocol === "file:") return false;
-    if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "::1") {
-      // Allow localhost for demo/testing, but block common internal ports
-      const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
-      const blockedPorts = ["8080", "3000", "5000", "8000", "9000"];
-      if (blockedPorts.includes(port)) return false;
+    if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "::1" || parsed.hostname === "[::1]") {
+      return false;
     }
     return true;
   } catch {

@@ -87,7 +87,6 @@ export function mapFileToTests(changedFile: string): string[] {
   }
 
   const base = basename(normalized, ext);
-  const dir = dirname(normalized);
 
   // core/ -> tests/core/
   if (normalized.startsWith("core/")) {
@@ -202,7 +201,7 @@ export class IncrementalTestRunner {
 
   /** Pluggable test executor. Override in tests or prod. */
   protected async _execute(
-    targetTests: string[],
+    _targetTests: string[],
     _mode: TestRunMode
   ): Promise<{ passed: number; failed: number; skipped: number; logs?: string }> {
     // Default implementation is a no-op/dry-run.

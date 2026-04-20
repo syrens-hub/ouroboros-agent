@@ -18,6 +18,9 @@ export interface WorkerTaskRow {
   result: string | null;
   error: string | null;
   priority: number;
+  retries: number;
+  max_retries: number;
+  timeout_ms: number;
   created_at: number;
   started_at: number | null;
   completed_at: number | null;
@@ -29,8 +32,8 @@ export function insertWorkerTask(
   try {
     const db = getDb();
     const result = db.prepare(
-      `INSERT INTO worker_tasks (parent_session_id, worker_session_id, task_name, task_description, allowed_tools, status, result, error, priority)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO worker_tasks (parent_session_id, worker_session_id, task_name, task_description, allowed_tools, status, result, error, priority, retries, max_retries, timeout_ms)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       entry.parent_session_id,
       entry.worker_session_id,
@@ -40,7 +43,10 @@ export function insertWorkerTask(
       entry.status,
       entry.result ?? null,
       entry.error ?? null,
-      entry.priority ?? 0
+      entry.priority ?? 0,
+      entry.retries ?? 0,
+      entry.max_retries ?? 3,
+      entry.timeout_ms ?? 60000
     );
     return { success: true, id: lastId(result) };
   } catch (e) {
@@ -50,7 +56,7 @@ export function insertWorkerTask(
 
 export function updateWorkerTask(
   id: number,
-  partial: Partial<Pick<WorkerTaskRow, "status" | "result" | "error" | "started_at" | "completed_at">>
+  partial: Partial<Pick<WorkerTaskRow, "status" | "result" | "error" | "started_at" | "completed_at" | "retries">>
 ): { success: true; changes: number } | { success: false; error: string } {
   try {
     const db = getDb();
@@ -76,6 +82,10 @@ export function updateWorkerTask(
       sets.push("completed_at = ?");
       params.push(partial.completed_at);
     }
+    if (partial.retries !== undefined) {
+      sets.push("retries = ?");
+      params.push(partial.retries);
+    }
     if (sets.length === 0) return { success: true, changes: 0 };
     const sql = `UPDATE worker_tasks SET ${sets.join(", ")} WHERE id = ?`;
     params.push(id);
@@ -90,7 +100,7 @@ export function listPendingWorkerTasks(): { success: true; data: WorkerTaskRow[]
   try {
     const db = getDb();
     const rawRows = db.prepare(
-      `SELECT * FROM worker_tasks WHERE status IN ('queued', 'running') ORDER BY priority DESC, created_at ASC`
+      `SELECT * FROM worker_tasks WHERE status IN ('queued', 'running') OR (status = 'failed' AND retries < max_retries) ORDER BY priority DESC, created_at ASC`
     ).all();
     const rows = rowsAs<WorkerTaskRow>(rawRows);
     return { success: true, data: rows };

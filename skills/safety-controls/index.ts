@@ -9,7 +9,6 @@
 
 import { getDb } from "../../core/db-manager.ts";
 import type { DbAdapter } from "../../core/db-adapter.ts";
-import { getBudgetStatus } from "../budget-guard/index.ts";
 
 // ─── Evolution Lock ─────────────────────────────────────────────────────────
 

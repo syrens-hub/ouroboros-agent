@@ -393,7 +393,15 @@ export const extendedConfig: ExtendedConfig = {
  *   POSTGRES_SSL=false                     - Enable PostgreSQL SSL
  *   DATABASE_PATH=./data/ouroboros.db      - SQLite database file path
  *   SQLITE_WAL=true                        - Enable SQLite WAL mode
- *   SLOW_QUERY_THRESHOLD_MS=0              - Slow query threshold (0 = disabled)
+ *   SLOW_QUERY_THRESHOLD_MS=500            - Slow query threshold in ms (0 = disabled)
+ *
+ * LLM FALLBACK:
+ *   FALLBACK_LLM_PROVIDER=openai           - Fallback LLM provider
+ *   FALLBACK_LLM_MODEL=gpt-4o-mini         - Fallback LLM model
+ *   FALLBACK_LLM_API_KEY=...               - Fallback LLM API key
+ *   FALLBACK_LLM_BASE_URL=...              - Fallback LLM base URL
+ *   FALLBACK_LLM_TEMPERATURE=0.2           - Fallback LLM temperature
+ *   FALLBACK_LLM_MAX_TOKENS=4096           - Fallback LLM max tokens
  *
  * REDIS:
  *   REDIS_URL=redis://localhost:6379/0     - Redis connection URL

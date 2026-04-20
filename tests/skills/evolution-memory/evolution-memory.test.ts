@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { getDb, resetDbSingleton } from "../../../core/db-manager.ts";
 import { KnowledgeBase } from "../../../skills/knowledge-base/index.ts";
 import {

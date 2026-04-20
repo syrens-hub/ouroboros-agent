@@ -65,6 +65,11 @@ import { safeJsonParse } from "../core/safe-utils.ts";
 import { securityConfig } from "../core/config-extension.ts";
 import { pruneDeadLetters } from "../core/event-bus.ts";
 import { pruneSecurityAuditLogs } from "../core/security-framework.ts";
+import { checkAndRollback, clearPendingMarker } from "../core/evolution/rollback.ts";
+import { startDiskMonitor, stopDiskMonitor } from "../core/disk-monitor.ts";
+
+import { detectIntrusion, recordViolation } from "../core/intrusion-detection.ts";
+import { getSecret } from "../core/config/secret-manager.ts";
 
 const PORT = appConfig.web.port;
 const WEB_DIST = join(process.cwd(), "web", "dist");
@@ -87,6 +92,15 @@ export function createApp(): Server {
     const origin = getOrigin(req);
     setCorsHeaders(res, origin);
     setSecurityHeaders(res);
+
+    // Intrusion detection layer
+    const intrusion = detectIntrusion(req);
+    if (intrusion.blocked) {
+      const clientIp = req.headers["x-forwarded-for"]?.toString().split(",")[0].trim() || req.socket.remoteAddress || "unknown";
+      recordViolation(clientIp);
+      json(res, 403, { success: false, error: { message: "Request blocked by security policy." } }, ctx);
+      return;
+    }
 
     const start = Date.now();
     try {
@@ -216,6 +230,14 @@ if (isEntrypoint) {
       logger.error("Configuration validation failed", { errors: validation.errors });
       throw new Error(`Invalid configuration:\n${validation.errors.map((e) => "  - " + e).join("\n")}`);
     }
+
+    await checkAndRollback();
+
+    // Load secrets from external vault if configured
+    const secretApiKey = await getSecret("LLM_API_KEY");
+    if (secretApiKey) appConfig.llm.apiKey = secretApiKey;
+    const secretWebToken = await getSecret("WEB_API_TOKEN");
+    if (secretWebToken) appConfig.web.apiToken = secretWebToken;
 
     await reconcileSkillRegistry();
     startRunnerIdleCleanup();
@@ -448,16 +470,20 @@ if (isEntrypoint) {
 
     const server = createApp();
     server.listen(PORT, () => {
+      clearPendingMarker();
+      startDiskMonitor();
       logger.info(`Ouroboros Web server running at http://localhost:${PORT}`, { dist: WEB_DIST });
     });
 
     process.on("SIGTERM", () => {
+      stopDiskMonitor();
       taskScheduler.destroy();
       executionDaemon.stop();
       autonomousEvolutionLoop.stop();
       gracefulShutdown(activeServer, "SIGTERM", 0);
     });
     process.on("SIGINT", () => {
+      stopDiskMonitor();
       taskScheduler.destroy();
       executionDaemon.stop();
       autonomousEvolutionLoop.stop();

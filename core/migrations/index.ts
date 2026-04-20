@@ -799,4 +799,40 @@ const m017: { name: string; up: MigrationFn<Ctx> } = {
   },
 };
 
-export const migrations = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017];
+const m018: { name: string; up: MigrationFn<Ctx> } = {
+  name: "018_worker_tasks_resilience",
+  async up({ context }) {
+    const sqlite = `
+      ALTER TABLE worker_tasks ADD COLUMN retries INTEGER DEFAULT 0;
+      ALTER TABLE worker_tasks ADD COLUMN max_retries INTEGER DEFAULT 3;
+      ALTER TABLE worker_tasks ADD COLUMN timeout_ms INTEGER DEFAULT 60000;
+    `;
+
+    const pg = `
+      ALTER TABLE worker_tasks ADD COLUMN IF NOT EXISTS retries INTEGER DEFAULT 0;
+      ALTER TABLE worker_tasks ADD COLUMN IF NOT EXISTS max_retries INTEGER DEFAULT 3;
+      ALTER TABLE worker_tasks ADD COLUMN IF NOT EXISTS timeout_ms INTEGER DEFAULT 60000;
+    `;
+
+    await context.db.exec(context.isPostgres ? pg : sqlite);
+  },
+};
+
+const m019: { name: string; up: MigrationFn<Ctx> } = {
+  name: "019_hot_query_indexes",
+  async up({ context }) {
+    const sqlite = `
+      CREATE INDEX IF NOT EXISTS idx_sessions_deleted_at ON sessions(deleted_at);
+      CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp DESC);
+    `;
+
+    const pg = `
+      CREATE INDEX IF NOT EXISTS idx_sessions_deleted_at ON sessions(deleted_at);
+      CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp DESC);
+    `;
+
+    await context.db.exec(context.isPostgres ? pg : sqlite);
+  },
+};
+
+export const migrations = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011, m012, m013, m014, m015, m016, m017, m018, m019];

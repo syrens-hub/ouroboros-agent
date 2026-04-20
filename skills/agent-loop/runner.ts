@@ -86,6 +86,7 @@ export interface AgentLoopRunner {
   getState(): AgentLoopState;
   pause(): void;
   resume(): void;
+  setAbortSignal(signal: AbortSignal): void;
   exportState(): LoopStateSnapshot;
   importState(snapshot: LoopStateSnapshot): void;
 }
@@ -140,6 +141,7 @@ export function createAgentLoopRunner(opts: {
 
   const loopCfg: LoopConfig = { ...DEFAULT_LOOP_CONFIG, ...opts.loopConfig };
   const abortController = new AbortController();
+  let externalAbortSignal: AbortSignal | undefined;
   let sessionInitialized = false;
   let pendingDenialHint: string | null = null;
   let paused = false;
@@ -190,6 +192,9 @@ export function createAgentLoopRunner(opts: {
           pauseResolve = null;
         }
       }
+    },
+    setAbortSignal(signal: AbortSignal) {
+      externalAbortSignal = signal;
     },
     exportState(): LoopStateSnapshot {
       return {
@@ -414,7 +419,11 @@ export function createAgentLoopRunner(opts: {
           })
         );
 
-        const assistantMsg = await llmCaller.call(contextResult.messages, toolPool.all());
+        if (externalAbortSignal?.aborted) {
+          state.status = "idle";
+          throw new Error("Agent loop aborted by external signal");
+        }
+        const assistantMsg = await llmCaller.call(contextResult.messages, toolPool.all(), externalAbortSignal);
         await hookRegistry.emit("agent:llmCall", {
           sessionId: opts.sessionId,
           turn: state.turnCount,

@@ -260,3 +260,128 @@ jobs:
           if [ "$FAIL" = "1" ]; then
             exit 1
           fi
+
+  test-node24:
+    name: Test (Node 24)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        id: cache-deps
+        with:
+          path: |
+            node_modules
+            web/node_modules
+            ~/.npm
+          key: ${{ runner.os }}-node-24-${{ hashFiles('package-lock.json', 'web/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-24-
+
+      - name: Install dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Install web dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: cd web && npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Security audit
+        run: npm run audit:ci || true
+
+      - name: Secrets scan
+        run: npm run secrets:scan || true
+
+      - name: Check runtime data bloat
+        run: |
+          if [ -d .ouroboros ]; then
+            SIZE=$(du -sm .ouroboros | cut -f1)
+            echo ".ouroboros size: ${SIZE}MB"
+            if [ "$SIZE" -gt 100 ]; then
+              echo "::warning::.ouroboros directory is larger than 100MB (${SIZE}MB). Run 'npm run cleanup' to prune old backups and checkpoints."
+            fi
+          fi
+
+      - name: Test (no coverage)
+        run: |
+          npm test -- --run 2>&1 | tee test-output-node24.log
+          echo "${PIPESTATUS[0]}" > test-exit-code-node24.txt
+
+      - name: Upload test output
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-output-node24
+          path: test-output-node24.log
+
+      - name: Test with coverage
+        run: |
+          npm run test:coverage 2>&1 | tee coverage-output-node24.log
+          echo "${PIPESTATUS[0]}" > coverage-exit-code-node24.txt
+
+      - name: Upload coverage output
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-output-node24
+          path: coverage-output-node24.log
+
+      - name: Build web
+        run: cd web && npm run build
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: ouroboros-agent:test
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-node24
+          path: coverage/
+
+      - name: Show test output tail
+        if: always()
+        run: |
+          echo "=== Test output tail (Node 24) ==="
+          tail -n 50 test-output-node24.log || true
+          echo "=== Coverage output tail (Node 24) ==="
+          tail -n 50 coverage-output-node24.log || true
+
+      - name: Assert tests passed
+        run: |
+          FAIL=0
+          if [ -f test-exit-code-node24.txt ]; then
+            exit_code=$(cat test-exit-code-node24.txt)
+            if [ "$exit_code" != "0" ]; then
+              echo "Tests failed with exit code $exit_code"
+              FAIL=1
+            fi
+          fi
+          if [ -f coverage-exit-code-node24.txt ]; then
+            exit_code=$(cat coverage-exit-code-node24.txt)
+            if [ "$exit_code" != "0" ]; then
+              echo "Coverage tests failed with exit code $exit_code"
+              FAIL=1
+            fi
+          fi
+          if [ "$FAIL" = "1" ]; then
+            exit 1
+          fi

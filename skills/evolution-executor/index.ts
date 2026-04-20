@@ -10,7 +10,7 @@ import type { DbAdapter } from "../../core/db-adapter.ts";
 import { eventBus } from "../../core/event-bus.ts";
 import { logger } from "../../core/logger.ts";
 import { safeJsonParse } from "../../core/safe-utils.ts";
-import { evolutionVersionManager, initEvolutionVersionTables } from "../evolution-version-manager/index.ts";
+import { initEvolutionVersionTables } from "../evolution-version-manager/index.ts";
 import { executeEvolution } from "../evolution-orchestrator/index.ts";
 import { changeFreezePeriod } from "../safety-controls/index.ts";
 

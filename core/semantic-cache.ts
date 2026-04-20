@@ -6,7 +6,6 @@
  */
 
 import { randomUUID } from "crypto";
-import { logger } from "./logger.ts";
 import { safeFailOpenAsync } from "./safe-utils.ts";
 import type { DbAdapter } from "./db-adapter.ts";
 

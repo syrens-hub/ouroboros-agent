@@ -66,7 +66,7 @@ export const appConfig = {
     set postgresUrl(v: string) {
       _dbState.connectionString = v;
     },
-    slowQueryThresholdMs: process.env.SLOW_QUERY_THRESHOLD_MS ? parseInt(process.env.SLOW_QUERY_THRESHOLD_MS, 10) : 0,
+    slowQueryThresholdMs: process.env.SLOW_QUERY_THRESHOLD_MS ? parseInt(process.env.SLOW_QUERY_THRESHOLD_MS, 10) : 500,
   },
   skills: {
     dir: process.env.OUROBOROS_SKILL_DIR || "skills",
@@ -188,6 +188,9 @@ export function validateConfig(
   if (nodeEnv === "production") {
     if (!config.web.apiToken || config.web.apiToken.length < 16) {
       errors.push("WEB_API_TOKEN is required in production and must be at least 16 characters long");
+    }
+    if (config.database.backend === "sqlite") {
+      errors.push("SQLite is not recommended for production. Set DATABASE_BACKEND=postgres and configure DATABASE_URL.");
     }
   }
 

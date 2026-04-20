@@ -3,7 +3,7 @@
  * ===========================
  */
 
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import Database from "better-sqlite3";
 import { appConfig } from "../../../core/config.ts";

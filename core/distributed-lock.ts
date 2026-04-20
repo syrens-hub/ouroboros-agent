@@ -15,7 +15,6 @@
 import { v4 as uuidv4 } from "uuid";
 import type { Redis } from "ioredis";
 import { getRedis } from "./redis.ts";
-import { appConfig } from "./config.ts";
 import { logger } from "./logger.ts";
 
 const REDIS_OP_TIMEOUT_MS = 5000;

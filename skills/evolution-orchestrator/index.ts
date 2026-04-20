@@ -13,6 +13,7 @@ import type { KnowledgeBase } from "../knowledge-base/index.ts";
 import { logger } from "../../core/logger.ts";
 import { getDistributedLock } from "../../core/distributed-lock.ts";
 import { appConfig } from "../../core/config.ts";
+import { createPendingMarker } from "../../core/evolution/rollback.ts";
 
 import type { EvolutionProposal, PipelineResult, PipelineOptions } from "./types.ts";
 export type { EvolutionProposal, PipelineResult, PipelineOptions } from "./types.ts"; // re-export for backward compatibility
@@ -302,6 +303,9 @@ export async function executeEvolution(
         const { applyDiffs } = getSelfModify();
         const applyResult = applyDiffs(version.diffs, { skipSyntaxCheck: false, skipBackup: false });
         backupPath = applyResult.backupPath;
+        if (backupPath) {
+          createPendingMarker(backupPath, versionId);
+        }
         if (!applyResult.success) {
           // Revert applied status
           evolutionVersionManager.updateTestStatus(versionId, "rollback");

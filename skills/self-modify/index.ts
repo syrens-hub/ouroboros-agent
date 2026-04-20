@@ -18,18 +18,15 @@
  */
 
 import { z } from "zod";
-import { resolve, dirname, join, relative, sep, normalize } from "path";
+import { resolve, dirname, join } from "path";
 import {
   existsSync,
   readFileSync,
   writeFileSync,
   renameSync,
-  unlinkSync,
   mkdirSync,
   copyFileSync,
-  statSync,
   readdirSync,
-  rmdirSync,
 } from "fs";
 import { execSync } from "child_process";
 import { createHash } from "crypto";

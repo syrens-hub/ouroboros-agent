@@ -8,11 +8,8 @@
  * - Dangerous code pattern detection
  */
 
-import { resolve, relative, sep, normalize, basename } from "path";
-import { evaluateConstitutionGuard, type GuardEvaluation } from "../../core/constitution-guard.ts";
-import { logger } from "../../core/logger.ts";
-
-const CACHED_PROJECT_ROOT = normalize(resolve(process.cwd()));
+import { basename } from "path";
+import { evaluateConstitutionGuard } from "../../core/constitution-guard.ts";
 
 export type ViolationLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 
@@ -116,9 +113,6 @@ const DANGEROUS_PATTERNS: Array<{ name: string; level: ViolationLevel; regex: Re
   },
 ];
 
-function normalizeForComparison(p: string): string {
-  return normalize(p).split(sep).join("/");
-}
 
 function isDistortedBibleName(path: string): boolean {
   const base = basename(path);

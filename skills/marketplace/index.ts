@@ -108,11 +108,8 @@ function discoverSkillsRecursively(dir: string): Skill[] {
   return nested;
 }
 
-async function installSkill(skill: Skill, targetDir: string, force = false, scanResult?: ReturnType<typeof scanSkill>): Promise<Result<string>> {
+async function installSkill(skill: Skill, targetDir: string, _force = false, scanResult?: ReturnType<typeof scanSkill>): Promise<Result<string>> {
   const dest = join(targetDir, skill.name);
-  if (existsSync(dest) && !force) {
-    return err({ code: "ALREADY_EXISTS", message: `Skill ${skill.name} already installed at ${dest}. Use force=true to overwrite.` });
-  }
   try {
     cpSync(skill.directory, dest, { recursive: true, force: true });
     await upsertSkillRegistry(

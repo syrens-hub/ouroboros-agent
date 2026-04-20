@@ -10,7 +10,6 @@ import {
 } from "../../../skills/evolution-viz/index.ts";
 import {
   resolveAndExecute,
-  type EvolutionProposal,
 } from "../../../skills/evolution-orchestrator/index.ts";
 import { evolutionVersionManager } from "../../../skills/evolution-version-manager/index.ts";
 import { approvalGenerator } from "../../../skills/approval/index.ts";

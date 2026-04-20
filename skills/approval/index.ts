@@ -123,21 +123,31 @@ export class HybridApprovalGenerator {
 
     const risk = req.riskScore;
 
+    const cost = req.estimatedCostUsd ?? 0;
+
     if (risk >= this.denyThreshold) {
       decision = "denied";
       reason = `Risk score ${risk} exceeds deny threshold (${this.denyThreshold})`;
     } else if (safety?.budgetExhausted) {
       decision = "denied";
       reason = "Budget exhausted";
-    } else if (risk >= this.delayedThreshold) {
-      decision = "manual";
-      reason = `Risk score ${risk} requires manual approval (threshold: ${this.delayedThreshold})`;
     } else if (safety?.frozen) {
       decision = "manual";
       reason = "System is in change freeze period";
     } else if (safety?.locked) {
       decision = "manual";
       reason = "Evolution lock is held by another process";
+    } else if (risk >= 70) {
+      // Cost-benefit gate: high risk always requires manual review regardless of cost
+      decision = "manual";
+      reason = `High risk score ${risk} requires manual approval (cost-benefit gate)`;
+    } else if (req.estimatedCostUsd !== undefined && req.estimatedCostUsd > 0 && req.estimatedCostUsd < 0.5 && risk < 30) {
+      // Cost-benefit gate: very low cost + low risk auto-approved
+      decision = "auto";
+      reason = `Low cost ($${cost.toFixed(2)}) and low risk (${risk}) auto-approved`;
+    } else if (risk >= this.delayedThreshold) {
+      decision = "manual";
+      reason = `Risk score ${risk} requires manual approval (threshold: ${this.delayedThreshold})`;
     } else if (risk >= this.autoThreshold) {
       decision = "delayed";
       delayMs = this.defaultDelayMs;

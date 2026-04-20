@@ -156,9 +156,12 @@ async function runWorkerAgent(
   taskDescription: string,
   tools: Tool<unknown, unknown, unknown>[],
   llmCfg?: LLMConfig,
-  opts?: { existingTaskId?: number; allowedTools?: string[]; taskName?: string; priority?: number }
+  opts?: { existingTaskId?: number; allowedTools?: string[]; taskName?: string; priority?: number; retries?: number; maxRetries?: number; timeoutMs?: number }
 ): Promise<string> {
   const priority = opts?.priority ?? 0;
+  const retries = opts?.retries ?? 0;
+  const maxRetries = opts?.maxRetries ?? 3;
+  const timeoutMs = opts?.timeoutMs ?? WORKER_TIMEOUT_MS;
   let taskId = opts?.existingTaskId;
   if (!taskId) {
     const insertResult = insertWorkerTask({
@@ -171,6 +174,9 @@ async function runWorkerAgent(
       result: null,
       error: null,
       priority,
+      retries,
+      max_retries: maxRetries,
+      timeout_ms: timeoutMs,
     });
     if (insertResult.success) {
       taskId = insertResult.id;
@@ -195,9 +201,10 @@ async function runWorkerAgent(
     const outputs: string[] = [];
     let executionError = false;
     const abortController = new AbortController();
+    runner.setAbortSignal(abortController.signal);
     const timeoutId = setTimeout(() => {
       abortController.abort();
-    }, WORKER_TIMEOUT_MS);
+    }, timeoutMs);
 
     try {
       for await (const msg of runner.run(taskDescription)) {
@@ -224,6 +231,16 @@ async function runWorkerAgent(
     const result = outputs.join("\n\n").slice(0, 8000);
 
     if (taskId) {
+      if (executionError && retries < maxRetries) {
+        updateWorkerTask(taskId, {
+          status: "queued",
+          result,
+          error: result,
+          retries: retries + 1,
+        });
+        logger.warn("Worker task failed, re-queued for persistent retry", { taskId, retries: retries + 1, maxRetries });
+        return result;
+      }
       updateWorkerTask(taskId, {
         status: executionError ? "failed" : "completed",
         result,

@@ -159,6 +159,7 @@ describe("validateConfig", () => {
     it("passes in production when WEB_API_TOKEN is 16+ characters", () => {
       const config = makeConfig({
         web: { port: 8080, apiToken: "a".repeat(16), allowedOrigins: [] },
+        database: { backend: "postgres", connectionString: "postgres://test", poolSize: 10, ssl: false, sqlite: { path: ".ouroboros/session.db", wal: true } },
       });
       const result = validateConfig(config, "production");
       expect(result.valid).toBe(true);
@@ -168,6 +169,7 @@ describe("validateConfig", () => {
     it("fails in production when WEB_API_TOKEN is missing", () => {
       const config = makeConfig({
         web: { port: 8080, apiToken: "", allowedOrigins: [] },
+        database: { backend: "postgres", connectionString: "postgres://test", poolSize: 10, ssl: false, sqlite: { path: ".ouroboros/session.db", wal: true } },
       });
       const result = validateConfig(config, "production");
       expect(result.valid).toBe(false);
@@ -299,13 +301,14 @@ describe("validateConfig", () => {
       });
       const result = validateConfig(config, "production");
       expect(result.valid).toBe(false);
-      expect(result.errors).toHaveLength(6);
+      expect(result.errors).toHaveLength(7);
       expect(result.errors).toContain("LLM_API_KEY is required and must not be empty when LLM_PROVIDER is not 'local'");
       expect(result.errors).toContain("LLM_MODEL is required and must not be empty when LLM_PROVIDER is not 'local'");
       expect(result.errors).toContain("WEB_API_TOKEN is required in production and must be at least 16 characters long");
       expect(result.errors).toContain("DATABASE_URL must start with 'postgres://' or 'postgresql://'");
       expect(result.errors).toContain("FEISHU_APP_ID is required and must not be empty when FEISHU_AUTO_START is enabled");
       expect(result.errors).toContain("FEISHU_APP_SECRET is required and must not be empty when FEISHU_AUTO_START is enabled");
+      expect(result.errors).toContain("SQLite is not recommended for production. Set DATABASE_BACKEND=postgres and configure DATABASE_URL.");
     });
   });
 });

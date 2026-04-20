@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Shield, GitBranch, CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react'
+import { GitBranch, CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react'
 import { apiFetch } from '../api'
 
 interface MonitoringStatus {

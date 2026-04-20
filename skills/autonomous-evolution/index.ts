@@ -17,10 +17,8 @@ import type { DbAdapter } from "../../core/db-adapter.ts";
 import { logger } from "../../core/logger.ts";
 import { eventBus } from "../../core/event-bus.ts";
 import { proposeEvolution, executeEvolution } from "../evolution-orchestrator/index.ts";
-import type { EvolutionProposal, PipelineResult } from "../evolution-orchestrator/types.ts";
 import { approvalGenerator } from "../approval/index.ts";
-import { runAutoReview, type GeneratedProposal } from "../evolution-generator/index.ts";
-import { deriveLesson } from "../evolution-memory/index.ts";
+import { runAutoReview } from "../evolution-generator/index.ts";
 import { recordEvolutionEvent } from "../evolution-observability/index.ts";
 
 export interface AutonomousConfig {
@@ -50,10 +48,6 @@ function defaultConfig(): AutonomousConfig {
     enabled: true,
     sleepDurationMs: 24 * 60 * 60 * 1000, // 24 hours
   };
-}
-
-function genId(): string {
-  return `ael-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 export function initAutonomousTables(db: DbAdapter): void {

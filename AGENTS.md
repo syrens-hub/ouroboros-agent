@@ -176,7 +176,7 @@ mkdir skills/my-skill
 cat > skills/my-skill/SKILL.md << 'EOF'
 ---
 name: my-skill
-version: 1.0.0
+version: 1.0.0-rc.1
 description: A concise description
 tags: [utility]
 ---
@@ -196,7 +196,7 @@ mkdir skills/my-tool-skill
 cat > skills/my-tool-skill/SKILL.md << 'EOF'
 ---
 name: my-tool-skill
-version: 1.0.0
+version: 1.0.0-rc.1
 description: Demonstrates executable skill
 tags: [tool]
 ---

@@ -1,5 +1,27 @@
 # ouroboros-agent
 
+## 1.0.0-rc.1
+
+### Release Candidate — Coverage Sprint & Production Hardening
+
+- **Test Coverage**: statements 77.75% → **80.24%**, branches 76.06% → **77.54%**, functions 80.43% → **82.54%**
+- **ESLint Toolchain**: fixed `eslint@9` + `@eslint/eslintrc` crash caused by `ajv@8` dedupe; added `overrides.ajv: ^6.14.0`
+- **Marketplace**: fixed `installSkill()` signature to pass `force` parameter, resolving upgrade/downgrade test failures
+- **Hook System**: converted `registerBuiltins()` from `require()` to dynamic `import()` for ESM compatibility
+- **New Tests**:
+  - `tests/core/llm-metrics.test.ts` — rolling-window metric overflow & empty-state branches
+  - `tests/skills/telemetry/timed-query.test.ts` — slow-query threshold branches
+  - `tests/skills/personality/anchor-store.test.ts` — anchor CRUD & category filter branches
+  - `tests/skills/rate-limiter/index.test.ts` — Redis-backed rate-limit branches
+  - `tests/skills/engraph/graph-lane.test.ts` — graph search & error-handling branches
+  - `tests/web/routes/handlers/browser.test.ts` — navigate/click/fill error paths
+  - `tests/skills/marketplace.test.ts` — version comparison & force-install logic
+  - `tests/core/hook-system.test.ts` — timeout/throw/discovery coverage
+  - `tests/skills/self-healing/canary-runner.test.ts` — canary rollback logic
+- **TypeScript**: resolved all tsc errors; fixed `TaskOptions` strictness in scheduler tests
+- **ESLint Warnings**: 63 → 25 (cleaned unused imports across 10+ modules)
+- **Package Metadata**: bumped version to `1.0.0-rc.1`, added `license`, `main`, `bin`, `files`, `keywords`
+
 ## 0.8.0
 
 ### Minor Changes

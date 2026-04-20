@@ -2,13 +2,13 @@ import { callLLMWithResilience, type LLMConfig } from "../../core/llm-resilience
 import type { BaseMessage, AssistantMessage, Tool } from "../../types/index.ts";
 
 export interface LLMCaller {
-  call(messages: BaseMessage[], tools: Tool<unknown, unknown, unknown>[]): Promise<AssistantMessage>;
+  call(messages: BaseMessage[], tools: Tool<unknown, unknown, unknown>[], signal?: AbortSignal): Promise<AssistantMessage>;
 }
 
 export function createRealLLMCaller(cfg: LLMConfig): LLMCaller {
   return {
-    async call(messages, tools) {
-      const result = await callLLMWithResilience(cfg, messages, tools);
+    async call(messages, tools, signal) {
+      const result = await callLLMWithResilience(cfg, messages, tools, { signal });
       if (!result.success) {
         throw new Error(`LLM error: ${result.error.message}`);
       }

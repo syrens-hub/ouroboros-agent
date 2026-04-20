@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { rmSync, existsSync, mkdtempSync } from "fs";
 import { join, dirname } from "path";
 import { tmpdir } from "os";
-import { appConfig } from "../../core/config.ts";
+
 
 const TEST_DB_DIR = mkdtempSync(join(tmpdir(), "ouroboros-session-db-"));
 const TEST_DB_PATH = join(TEST_DB_DIR, "session.db");

@@ -7,9 +7,7 @@
 
 import { randomUUID } from "crypto";
 import { getDb } from "../../core/db-manager.ts";
-import type { DbAdapter } from "../../core/db-adapter.ts";
 import type { Claim, EvidenceSource } from "./types.ts";
-import { safeJsonParse } from "../../core/safe-utils.ts";
 import {
   initMemoryWikiTables,
   ensureInitialized,
@@ -22,7 +20,6 @@ export type { Claim, EvidenceSource };
 export { initMemoryWikiTables, ensureInitialized, rowToClaim, getClaim, updateClaim };
 
 import { addRelation, removeRelation } from "./claim-graph.ts";
-import { initEvidenceTreeTables } from "./evidence-tree.ts";
 
 export function createClaim(
   claim: Omit<Claim, "id" | "createdAt" | "updatedAt">

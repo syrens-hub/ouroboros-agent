@@ -187,7 +187,6 @@ export class DependencyGraph {
         for (const fa of a.filesChanged) {
           for (const fb of b.filesChanged) {
             const depsA = scanFileDependencies(fa);
-            const depsB = scanFileDependencies(fb);
             if (depsA.includes(fb)) {
               // a depends on b, but a comes first in the array — this is okay if we execute in order
               // Actually this means b should be executed BEFORE a

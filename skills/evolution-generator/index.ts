@@ -10,8 +10,8 @@
  *   3. Auto-Proposal — packages findings into EvolutionProposal + diffs
  */
 
-import { readFileSync, existsSync, readdirSync, statSync } from "fs";
-import { resolve, relative, join, extname } from "path";
+import { readFileSync, existsSync, readdirSync } from "fs";
+import { resolve, relative, join } from "path";
 import type { EvolutionProposal } from "../evolution-orchestrator/types.ts";
 import { logger } from "../../core/logger.ts";
 

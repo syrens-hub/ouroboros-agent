@@ -53,7 +53,7 @@ describe("Evolution Feedback Loop v2", () => {
 
   it("skips rollback when disabled", async () => {
     const { evolutionVersionManager } = await import("../../../skills/evolution-version-manager/index.ts");
-    const v1 = evolutionVersionManager.createVersion({
+    evolutionVersionManager.createVersion({
       filesChanged: ["skills/a/index.ts"],
       riskScore: 10,
       approvalStatus: "approved",

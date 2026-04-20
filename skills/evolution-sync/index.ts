@@ -11,7 +11,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "fs";
 import { resolve, join } from "path";
 import { getDb } from "../../core/db-manager.ts";
-import type { DbAdapter } from "../../core/db-adapter.ts";
 import { logger } from "../../core/logger.ts";
 import { safeJsonParse } from "../../core/safe-utils.ts";
 

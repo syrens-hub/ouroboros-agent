@@ -25,7 +25,6 @@ export function MessageList() {
     messages,
     isLoading,
     reviewNotices,
-    lightboxUrl,
     ttsSpeakingId,
     hasMore,
     loadingMore,

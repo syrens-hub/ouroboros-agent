@@ -120,9 +120,13 @@ describe("isAllowedUrl", () => {
     expect(isAllowedUrl("http://127.0.0.1:3000/")).toBe(false);
   });
 
-  it("allows localhost with standard ports", () => {
-    expect(isAllowedUrl("http://localhost:80/")).toBe(true);
-    expect(isAllowedUrl("https://localhost:443/")).toBe(true);
+  it("rejects localhost with standard ports", () => {
+    expect(isAllowedUrl("http://localhost:80/")).toBe(false);
+    expect(isAllowedUrl("https://localhost:443/")).toBe(false);
+  });
+
+  it("rejects ipv6 localhost", () => {
+    expect(isAllowedUrl("http://[::1]:8080/")).toBe(false);
   });
 
   it("rejects invalid URLs", () => {

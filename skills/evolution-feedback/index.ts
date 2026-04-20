@@ -149,7 +149,6 @@ export async function handleEvolutionFailure(
   // 2. Self-healer diagnosis
   const { SelfHealer } = getSelfHealing();
   const healer = new SelfHealer({ enableAutoRollback: false });
-  const anomaly = healer.diagnose(new Error(errorMsg), { stage, versionId });
   const healResult = await healer.attemptRepair({
     error: new Error(errorMsg),
     context: { stage, versionId },

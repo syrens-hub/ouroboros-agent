@@ -6,7 +6,7 @@
  */
 
 import { readFileSync, existsSync } from "fs";
-import { join, resolve } from "path";
+import { resolve } from "path";
 import { getDb } from "../../core/db-manager.ts";
 import type { DbAdapter } from "../../core/db-adapter.ts";
 import { logger } from "../../core/logger.ts";
